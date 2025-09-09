@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
+
 @Entity
 @DiscriminatorValue("CONDUCTEUR")
 @Data
@@ -40,6 +41,8 @@ public class Conducteur extends User {
     
     @Column(name = "is_available")
     private Boolean isAvailable = true;
+    
+    // Relationships will be managed by Voyage entity
     
     public Conducteur(String username, String email, String password, String firstName, String lastName, String phoneNumber) {
         super();

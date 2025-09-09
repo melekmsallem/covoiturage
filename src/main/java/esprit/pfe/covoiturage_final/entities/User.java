@@ -55,6 +55,8 @@ public class User implements UserDetails {
     @Column(name = "is_active")
     private Boolean isActive = true;
     
+    // Relationships will be managed by other entities
+    
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();

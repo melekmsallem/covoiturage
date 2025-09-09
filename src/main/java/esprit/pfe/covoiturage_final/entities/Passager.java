@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.NoArgsConstructor;
 
+
 @Entity
 @DiscriminatorValue("PASSAGER")
 @Data
@@ -25,6 +26,8 @@ public class Passager extends User {
     
     @Column(name = "is_verified")
     private Boolean isVerified = false;
+    
+    // Relationships will be managed by Reservation entity
     
     public Passager(String username, String email, String password, String firstName, String lastName, String phoneNumber) {
         super();
