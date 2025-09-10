@@ -1,22 +1,29 @@
 package esprit.pfe.covoiturage_final.controllers;
 
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/api/public")
+@RequestMapping("/api/test")
 @CrossOrigin(origins = "*", maxAge = 3600)
 public class TestController {
-
-    @GetMapping("/test")
-    public String test() {
-        return "Covoiturage API is working!";
-    }
-
+    
     @GetMapping("/health")
-    public String health() {
-        return "OK";
+    public String healthCheck() {
+        return "Sprint 2: Core Carpooling Features - API is running!";
+    }
+    
+    @GetMapping("/sprint2")
+    public String sprint2Status() {
+        return "Sprint 2 Features Implemented:\n" +
+               "✅ Trip Creation and Management\n" +
+               "✅ Trip Search and Filtering\n" +
+               "✅ Booking System\n" +
+               "✅ Driver and Passenger Operations\n" +
+               "✅ Trip Status Management\n" +
+               "✅ GPS Point Management\n" +
+               "✅ Options and Cities Management\n" +
+               "✅ Input Validation\n" +
+               "✅ Error Handling\n" +
+               "\nReady for testing!";
     }
 }

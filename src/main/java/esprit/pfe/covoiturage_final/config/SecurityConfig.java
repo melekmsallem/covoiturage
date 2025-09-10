@@ -62,6 +62,11 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth ->
                 auth.requestMatchers("/api/auth/**").permitAll()
                     .requestMatchers("/api/public/**").permitAll()
+                    .requestMatchers("/api/options/**").permitAll()
+                    .requestMatchers("/api/cities/**").permitAll()
+                    .requestMatchers("/api/trips/available").permitAll()
+                    .requestMatchers("/api/trips/search").permitAll()
+                    .requestMatchers("/api/test/**").permitAll()
                     .requestMatchers("/h2-console/**").permitAll()
                     .anyRequest().authenticated()
             );

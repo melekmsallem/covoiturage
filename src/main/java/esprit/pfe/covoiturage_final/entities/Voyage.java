@@ -48,9 +48,8 @@ public class Voyage {
     private LocalDateTime updatedAt;
     
     // Relationships
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "conducteur_id", nullable = false)
-    private Conducteur conducteur;
+    @Column(name = "conducteur_id", nullable = false)
+    private Long conducteurId;
     
     @OneToMany(mappedBy = "voyage", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Point_GPS> points;
