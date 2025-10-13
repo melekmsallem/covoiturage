@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   bool _isAuthenticated = false;
@@ -42,6 +43,8 @@ class AuthProvider extends ChangeNotifier {
     await prefs.setString('role', user['role']);
 
     _token = token;
+    // Set in-memory token immediately so next requests include Authorization on web
+    ApiService.setToken(token);
     _user = user;
     _isAuthenticated = true;
     notifyListeners();
@@ -52,6 +55,7 @@ class AuthProvider extends ChangeNotifier {
     await prefs.clear();
 
     _token = null;
+    ApiService.setToken(null);
     _user = null;
     _isAuthenticated = false;
     notifyListeners();

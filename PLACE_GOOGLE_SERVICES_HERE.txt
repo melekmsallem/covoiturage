@@ -1,0 +1,17 @@
+INSTRUCTIONS: Place your google-services.json file in the same directory as this file!
+
+Location: covoiturage_app/android/app/google-services.json
+
+Steps:
+1. Go to Firebase Console (console.firebase.google.com)
+2. Open your Covoiturage project
+3. Click Settings (gear icon) → Project settings
+4. Scroll to "Your apps" section
+5. Under Android app, click "Download google-services.json"
+6. Move that file to: covoiturage_app/android/app/
+7. Delete this instruction file
+
+The file should be named exactly: google-services.json
+
+
+

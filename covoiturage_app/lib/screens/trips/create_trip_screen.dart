@@ -291,7 +291,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
               controller: _priceController,
               decoration: InputDecoration(
                 labelText: 'Price per Seat (TND)',
-                prefixIcon: const Icon(Icons.attach_money),
+                prefixIcon: const Icon(Icons.payments),
                 border: const OutlineInputBorder(),
                 errorText: _priceError,
               ),
@@ -452,48 +452,211 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<Map<String, dynamic>>(
-              value: _selectedDepartureCity,
-              decoration: InputDecoration(
-                labelText: 'Departure City',
-                prefixIcon: const Icon(Icons.location_on),
-                border: const OutlineInputBorder(),
-                errorText: _departureCityError,
-              ),
-              items: _cities.map((city) {
-                return DropdownMenuItem<Map<String, dynamic>>(
-                  value: city,
-                  child: Text(city['name'].toString()),
-                );
-              }).toList(),
-              onChanged: (value) {
+            Autocomplete<Map<String, dynamic>>(
+              displayStringForOption: (Map<String, dynamic> option) => option['name'] ?? '',
+              optionsBuilder: (TextEditingValue textEditingValue) {
+                if (textEditingValue.text.isEmpty) {
+                  return _cities.cast<Map<String, dynamic>>().take(10); // Show first 10 cities alphabetically
+                }
+                
+                // Filter cities that start with the typed text
+                final matchingCities = _cities.cast<Map<String, dynamic>>().where((city) =>
+                    city['name'].toString().toLowerCase().startsWith(textEditingValue.text.toLowerCase())
+                ).toList();
+                
+                // If we have matches, show them first, then add other cities alphabetically
+                if (matchingCities.isNotEmpty) {
+                  final otherCities = _cities.cast<Map<String, dynamic>>().where((city) =>
+                      !city['name'].toString().toLowerCase().startsWith(textEditingValue.text.toLowerCase())
+                  ).toList();
+                  return [...matchingCities, ...otherCities].take(15);
+                }
+                
+                // If no matches, show all cities alphabetically
+                return _cities.cast<Map<String, dynamic>>().take(15);
+              },
+              onSelected: (Map<String, dynamic> selection) {
                 setState(() {
-                  _selectedDepartureCity = value;
+                  _selectedDepartureCity = selection;
                 });
                 _validateDepartureCity();
                 _validateArrivalCity(); // Re-validate arrival city
               },
+              fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                return TextFormField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  decoration: InputDecoration(
+                    labelText: 'Departure City',
+                    prefixIcon: const Icon(Icons.location_on),
+                    border: const OutlineInputBorder(),
+                    hintText: 'Type to search cities...',
+                    errorText: _departureCityError,
+                  ),
+                  onChanged: (value) {
+                    _validateDepartureCity();
+                    _validateArrivalCity(); // Re-validate arrival city
+                  },
+                );
+              },
+              optionsViewBuilder: (context, onSelected, options) {
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    elevation: 4.0,
+                    borderRadius: BorderRadius.circular(8),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final option = options.elementAt(index);
+                          final cityName = option['name'].toString();
+                          final isHighlighted = cityName.toLowerCase().startsWith(
+                            _selectedDepartureCity?['name']?.toString().toLowerCase() ?? ''
+                          );
+                          
+                          return InkWell(
+                            onTap: () => onSelected(option),
+                            child: Container(
+                              padding: const EdgeInsets.all(16.0),
+                              decoration: BoxDecoration(
+                                color: isHighlighted ? Colors.blue.shade50 : null,
+                                border: Border(
+                                  bottom: BorderSide(color: Colors.grey.shade200),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_city,
+                                    size: 20,
+                                    color: isHighlighted ? Colors.blue : Colors.grey,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      cityName,
+                                      style: TextStyle(
+                                        fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                                        color: isHighlighted ? Colors.blue : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
+              },
             ),
             const SizedBox(height: 16),
-            DropdownButtonFormField<Map<String, dynamic>>(
-              value: _selectedArrivalCity,
-              decoration: InputDecoration(
-                labelText: 'Arrival City',
-                prefixIcon: const Icon(Icons.location_on),
-                border: const OutlineInputBorder(),
-                errorText: _arrivalCityError,
-              ),
-              items: _cities.map((city) {
-                return DropdownMenuItem<Map<String, dynamic>>(
-                  value: city,
-                  child: Text(city['name'].toString()),
-                );
-              }).toList(),
-              onChanged: (value) {
+            Autocomplete<Map<String, dynamic>>(
+              displayStringForOption: (Map<String, dynamic> option) => option['name'] ?? '',
+              optionsBuilder: (TextEditingValue textEditingValue) {
+                if (textEditingValue.text.isEmpty) {
+                  return _cities.cast<Map<String, dynamic>>().take(10); // Show first 10 cities alphabetically
+                }
+                
+                // Filter cities that start with the typed text
+                final matchingCities = _cities.cast<Map<String, dynamic>>().where((city) =>
+                    city['name'].toString().toLowerCase().startsWith(textEditingValue.text.toLowerCase())
+                ).toList();
+                
+                // If we have matches, show them first, then add other cities alphabetically
+                if (matchingCities.isNotEmpty) {
+                  final otherCities = _cities.cast<Map<String, dynamic>>().where((city) =>
+                      !city['name'].toString().toLowerCase().startsWith(textEditingValue.text.toLowerCase())
+                  ).toList();
+                  return [...matchingCities, ...otherCities].take(15);
+                }
+                
+                // If no matches, show all cities alphabetically
+                return _cities.cast<Map<String, dynamic>>().take(15);
+              },
+              onSelected: (Map<String, dynamic> selection) {
                 setState(() {
-                  _selectedArrivalCity = value;
+                  _selectedArrivalCity = selection;
                 });
                 _validateArrivalCity();
+              },
+              fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                return TextFormField(
+                  controller: controller,
+                  focusNode: focusNode,
+                  decoration: InputDecoration(
+                    labelText: 'Arrival City',
+                    prefixIcon: const Icon(Icons.location_on),
+                    border: const OutlineInputBorder(),
+                    hintText: 'Type to search cities...',
+                    errorText: _arrivalCityError,
+                  ),
+                  onChanged: (value) {
+                    _validateArrivalCity();
+                  },
+                );
+              },
+              optionsViewBuilder: (context, onSelected, options) {
+                return Align(
+                  alignment: Alignment.topLeft,
+                  child: Material(
+                    elevation: 4.0,
+                    borderRadius: BorderRadius.circular(8),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final option = options.elementAt(index);
+                          final cityName = option['name'].toString();
+                          final isHighlighted = cityName.toLowerCase().startsWith(
+                            _selectedArrivalCity?['name']?.toString().toLowerCase() ?? ''
+                          );
+                          
+                          return InkWell(
+                            onTap: () => onSelected(option),
+                            child: Container(
+                              padding: const EdgeInsets.all(16.0),
+                              decoration: BoxDecoration(
+                                color: isHighlighted ? Colors.blue.shade50 : null,
+                                border: Border(
+                                  bottom: BorderSide(color: Colors.grey.shade200),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.location_city,
+                                    size: 20,
+                                    color: isHighlighted ? Colors.blue : Colors.grey,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Text(
+                                      cityName,
+                                      style: TextStyle(
+                                        fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                                        color: isHighlighted ? Colors.blue : Colors.black87,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                );
               },
             ),
             const SizedBox(height: 16),
@@ -779,8 +942,10 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       case 'downhill_skiing': return Icons.downhill_skiing;
       case 'roofing': return Icons.roofing;
       case 'wifi': return Icons.wifi;
+      case 'wifi_hotspot': return Icons.wifi_tethering;
       case 'power': return Icons.power;
       case 'bluetooth': return Icons.bluetooth;
+      case 'bluetooth_audio': return Icons.bluetooth_audio;
       case 'tablet': return Icons.tablet;
       case 'menu_book': return Icons.menu_book;
       case 'water_drop': return Icons.water_drop;
@@ -792,6 +957,16 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       case 'volume_off': return Icons.volume_off;
       case 'business': return Icons.business;
       case 'star': return Icons.star;
+      case 'heating': return Icons.thermostat;
+      case 'air_conditioning': return Icons.ac_unit;
+      case 'extra_luggage': return Icons.luggage;
+      case 'food_drinks': return Icons.restaurant;
+      case 'entertainment': return Icons.movie;
+      case 'comfort': return Icons.airline_seat_recline_normal;
+      case 'safety': return Icons.security;
+      case 'local_drink': return Icons.local_drink;
+      case 'movie': return Icons.movie;
+      case 'security': return Icons.security;
       default: return Icons.help_outline;
     }
   }

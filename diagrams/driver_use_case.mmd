@@ -1,0 +1,21 @@
+flowchart TD
+  D([Driver]):::actor
+
+  UC1((Sign In))
+  UC2((Create Voyage))
+  UC3((Edit/Cancel Voyage))
+  UC4((Set Options & Seats))
+  UC5((View Passenger List))
+  UC6((Confirm/Manage Reservations))
+  UC7((Complete Trip & Get Rated))
+
+  D --- UC1
+  D --- UC2
+  D --- UC3
+  D --- UC4
+  D --- UC5
+  D --- UC6
+  D --- UC7
+
+  classDef actor fill:#fff,stroke:#333,stroke-width:1;
+

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Payment Canceled</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; }
+    .warn { color: #b71c1c; font-weight: bold; }
+  </style>
+  <script>
+    window.onload = function() {
+      if (window.opener) {
+        window.opener.postMessage({paymentStatus: 'CANCELED'}, '*');
+      }
+    };
+  </script>
+</head>
+<body>
+  <h3 class="warn">Payment was canceled.</h3>
+  <p>You can try again from the app.</p>
+</body>
+</html>
+
+
+
+
+
+
+
+

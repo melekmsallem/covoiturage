@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 5px; }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        pre { background: #f8f9fa; padding: 10px; border-radius: 3px; overflow-x: auto; }
+    </style>
+</head>
+<body>
+    <h1>Login Flow Test</h1>
+    
+    <div class="test-section">
+        <h3>1. Test Login</h3>
+        <button onclick="testLogin()">Test Admin Login</button>
+        <div id="login-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>2. Test Token Verification</h3>
+        <button onclick="testTokenVerification()">Test Token Verification</button>
+        <div id="token-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>3. Test Dashboard Data</h3>
+        <button onclick="testDashboardData()">Test Dashboard Data</button>
+        <div id="dashboard-result"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>4. Test Dashboard Redirect</h3>
+        <button onclick="testDashboardRedirect()">Test Dashboard Redirect</button>
+        <div id="redirect-result"></div>
+    </div>
+
+    <script>
+        let authToken = null;
+        
+        async function testLogin() {
+            const resultDiv = document.getElementById('login-result');
+            resultDiv.innerHTML = '<p>Testing login...</p>';
+            
+            try {
+                const response = await fetch('/api/admin/auth/signin', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        usernameOrEmail: 'admin',
+                        password: 'admin123'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    authToken = data.token;
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Login Successful!</h4>
+                            <p><strong>Token:</strong> ${data.token.substring(0, 50)}...</p>
+                            <p><strong>User:</strong> ${data.username}</p>
+                            <p><strong>Email:</strong> ${data.email}</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Login Failed</h4>
+                            <p>Status: ${response.status}</p>
+                            <p>Error: ${data.message || 'Unknown error'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Login Error</h4>
+                        <p>Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function testTokenVerification() {
+            const resultDiv = document.getElementById('token-result');
+            
+            if (!authToken) {
+                resultDiv.innerHTML = '<div class="error"><p>❌ No token available. Please login first.</p></div>';
+                return;
+            }
+            
+            resultDiv.innerHTML = '<p>Testing token verification...</p>';
+            
+            try {
+                const response = await fetch('/api/admin/auth/verify', {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+                
+                const data = await response.text();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Token Verification Successful!</h4>
+                            <p>Response: ${data}</p>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Token Verification Failed</h4>
+                            <p>Status: ${response.status}</p>
+                            <p>Error: ${data}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Token Verification Error</h4>
+                        <p>Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        async function testDashboardData() {
+            const resultDiv = document.getElementById('dashboard-result');
+            resultDiv.innerHTML = '<p>Testing dashboard data...</p>';
+            
+            try {
+                const response = await fetch('/api/test/sprint4/dashboard-test');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ Dashboard Data Retrieved!</h4>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+                        <div class="error">
+                            <h4>❌ Dashboard Data Failed</h4>
+                            <p>Status: ${response.status}</p>
+                            <p>Error: ${data.message || 'Unknown error'}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ Dashboard Data Error</h4>
+                        <p>Error: ${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+        
+        function testDashboardRedirect() {
+            const resultDiv = document.getElementById('redirect-result');
+            
+            if (!authToken) {
+                resultDiv.innerHTML = '<div class="error"><p>❌ No token available. Please login first.</p></div>';
+                return;
+            }
+            
+            // Store token in localStorage
+            localStorage.setItem('adminToken', authToken);
+            
+            resultDiv.innerHTML = `
+                <div class="info">
+                    <h4>🔄 Redirecting to Dashboard...</h4>
+                    <p>Token stored in localStorage</p>
+                    <p><a href="/admin-dashboard.html" target="_blank">Click here to open dashboard</a></p>
+                </div>
+            `;
+            
+            // Auto-redirect after 2 seconds
+            setTimeout(() => {
+                window.location.href = '/admin-dashboard.html';
+            }, 2000);
+        }
+    </script>
+</body>
+</html>
+

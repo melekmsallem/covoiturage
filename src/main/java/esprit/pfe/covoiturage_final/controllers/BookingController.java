@@ -4,12 +4,17 @@ import esprit.pfe.covoiturage_final.dto.*;
 import esprit.pfe.covoiturage_final.services.TripService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/bookings")
@@ -41,11 +46,52 @@ public class BookingController {
     }
     
     @GetMapping("/my-bookings")
-    public ResponseEntity<?> getMyBookings() {
+    public ResponseEntity<?> getMyBookings(
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size,
+            @RequestParam(value = "sort", defaultValue = "reservationDate,desc") String sort) {
         try {
             Long passengerId = getCurrentUserId();
-            List<BookingResponse> response = tripService.getBookingsByPassenger(passengerId);
-            return ResponseEntity.ok(response);
+            String[] sortParams = sort.split(",");
+            String sortField = sortParams[0];
+            Sort.Direction direction = sortParams.length > 1 && "desc".equalsIgnoreCase(sortParams[1]) 
+                    ? Sort.Direction.DESC : Sort.Direction.ASC;
+            Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortField));
+            
+            Page<BookingResponse> bookingsPage = tripService.getBookingsByPassengerPageable(passengerId, pageable);
+            return ResponseEntity.ok(Map.of(
+                "data", bookingsPage.getContent(),
+                "page", bookingsPage.getNumber(),
+                "size", bookingsPage.getSize(),
+                "totalPages", bookingsPage.getTotalPages(),
+                "totalElements", bookingsPage.getTotalElements()
+            ));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+    
+    @GetMapping("/my-trip-bookings")
+    public ResponseEntity<?> getMyTripBookings(
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "10") int size,
+            @RequestParam(value = "sort", defaultValue = "reservationDate,desc") String sort) {
+        try {
+            Long driverId = getCurrentUserId();
+            String[] sortParams = sort.split(",");
+            String sortField = sortParams[0];
+            Sort.Direction direction = sortParams.length > 1 && "desc".equalsIgnoreCase(sortParams[1]) 
+                    ? Sort.Direction.DESC : Sort.Direction.ASC;
+            Pageable pageable = PageRequest.of(page, size, Sort.by(direction, sortField));
+            
+            Page<BookingResponse> bookingsPage = tripService.getBookingsByDriverPageable(driverId, pageable);
+            return ResponseEntity.ok(Map.of(
+                "data", bookingsPage.getContent(),
+                "page", bookingsPage.getNumber(),
+                "size", bookingsPage.getSize(),
+                "totalPages", bookingsPage.getTotalPages(),
+                "totalElements", bookingsPage.getTotalElements()
+            ));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
@@ -66,6 +112,17 @@ public class BookingController {
         try {
             Long driverId = getCurrentUserId();
             BookingResponse response = tripService.confirmBooking(bookingId, driverId);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+    
+    @PostMapping("/{bookingId}/decline")
+    public ResponseEntity<?> declineBooking(@PathVariable Long bookingId) {
+        try {
+            Long driverId = getCurrentUserId();
+            BookingResponse response = tripService.declineBooking(bookingId, driverId);
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());

@@ -9,7 +9,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 @Entity
-@Table(name = "voyages")
+@Table(name = "voyages", indexes = {
+    @Index(name = "idx_voyage_departure_time", columnList = "departure_time"),
+    @Index(name = "idx_voyage_status", columnList = "status"),
+    @Index(name = "idx_voyage_conducteur_id", columnList = "conducteur_id")
+})
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -51,7 +55,17 @@ public class Voyage {
     @Column(name = "conducteur_id", nullable = false)
     private Long conducteurId;
     
-    @OneToMany(mappedBy = "voyage", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    // Direct departure and arrival city relationships
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "departure_ville_id", nullable = true)
+    private Ville departureVille;
+    
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "arrival_ville_id", nullable = true)
+    private Ville arrivalVille;
+    
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JoinColumn(name = "voyage_id")
     private List<Point_GPS> points;
     
     @ManyToMany(fetch = FetchType.LAZY)

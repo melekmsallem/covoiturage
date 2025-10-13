@@ -8,8 +8,13 @@ import org.springframework.web.bind.annotation.*;
 public class TestController {
     
     @GetMapping("/health")
-    public String healthCheck() {
-        return "Sprint 2: Core Carpooling Features - API is running!";
+    public java.util.Map<String, Object> healthCheck() {
+        return java.util.Map.of(
+            "status", "success",
+            "message", "Sprint 2: Core Carpooling Features - API is running!",
+            "timestamp", java.time.Instant.now().toString(),
+            "version", "1.0.0"
+        );
     }
     
     @GetMapping("/sprint2")

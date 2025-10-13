@@ -2,6 +2,7 @@ package esprit.pfe.covoiturage_final.repositories;
 
 import esprit.pfe.covoiturage_final.entities.Voyage;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -27,10 +28,19 @@ public interface VoyageRepository extends JpaRepository<Voyage, Long> {
     
     @Query("SELECT v FROM Voyage v WHERE v.departureTime BETWEEN :startDate AND :endDate")
     List<Voyage> findByDepartureTimeBetween(@Param("startDate") LocalDateTime startDate, 
-                                           @Param("endDate") LocalDateTime endDate);
+                                           
+    
+    @Param("endDate") LocalDateTime endDate);
     
     List<Voyage> findByConducteurIdAndStatus(Long conducteurId, Voyage.VoyageStatus status);
     
     @Query("SELECT v FROM Voyage v WHERE v.availableSeats > 0 AND v.status = 'PLANNED'")
     List<Voyage> findAvailableTrips();
+    
+    // Admin dashboard methods
+    Long countByStatus(Voyage.VoyageStatus status);
+    Long countByCreatedAtAfter(LocalDateTime date);
+
+    @Modifying
+    void deleteByIdIn(List<Long> voyageIds);
 }

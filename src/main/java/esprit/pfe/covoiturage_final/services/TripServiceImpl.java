@@ -4,6 +4,9 @@ import esprit.pfe.covoiturage_final.dto.*;
 import esprit.pfe.covoiturage_final.entities.*;
 import esprit.pfe.covoiturage_final.repositories.*;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -59,6 +62,25 @@ public class TripServiceImpl implements TripService {
         trip.setStatus(Voyage.VoyageStatus.PLANNED);
         trip.setConducteurId(driverId);
         
+        // Map cities (by name) to entity relations before saving (FKs may be NOT NULL)
+        if (request.getDepartureCity() == null || request.getDepartureCity().trim().isEmpty()) {
+            throw new RuntimeException("Departure city is required");
+        }
+        if (request.getArrivalCity() == null || request.getArrivalCity().trim().isEmpty()) {
+            throw new RuntimeException("Arrival city is required");
+        }
+
+        Ville departureVille = resolveCityByName(request.getDepartureCity());
+        Ville arrivalVille = resolveCityByName(request.getArrivalCity());
+        if (departureVille == null) {
+            throw new RuntimeException("Unknown departure city: " + request.getDepartureCity());
+        }
+        if (arrivalVille == null) {
+            throw new RuntimeException("Unknown arrival city: " + request.getArrivalCity());
+        }
+        trip.setDepartureVille(departureVille);
+        trip.setArrivalVille(arrivalVille);
+
         trip = voyageRepository.save(trip);
         
         // Create GPS points
@@ -74,11 +96,7 @@ public class TripServiceImpl implements TripService {
             voyageRepository.save(trip);
         }
         
-        // Add cities if provided - using city names instead of IDs
-        if (request.getDepartureCity() != null && request.getArrivalCity() != null) {
-            // In a real implementation, you would find cities by name
-            // For now, we'll skip this as the relationship is complex
-        }
+        // Cities are already set above
         
         return convertToTripResponse(trip);
     }
@@ -140,6 +158,204 @@ public class TripServiceImpl implements TripService {
     }
     
     @Override
+    public List<TripResponse> searchTrips(TripSearchRequest request) {
+        // Get available trips
+        List<Voyage> trips = voyageRepository.findAvailableTrips();
+        
+        // Filter by date (day window)
+        if (request.getDate() != null && !request.getDate().trim().isEmpty()) {
+            try {
+                java.time.LocalDate day = java.time.LocalDate.parse(request.getDate().substring(0, Math.min(10, request.getDate().length())));
+                java.time.LocalDateTime startOfDay = day.atStartOfDay();
+                java.time.LocalDateTime endOfDay = day.atTime(23, 59, 59);
+                trips = trips.stream()
+                    .filter(trip -> trip.getDepartureTime() != null
+                        && !trip.getDepartureTime().isBefore(startOfDay)
+                        && !trip.getDepartureTime().isAfter(endOfDay))
+                    .collect(java.util.stream.Collectors.toList());
+            } catch (Exception ignored) { /* fallback to time filters below */ }
+        }
+
+        // Filter by departure time range
+        if (request.getDepartureTime() != null) {
+            trips = trips.stream()
+                .filter(trip -> trip.getDepartureTime().isAfter(request.getDepartureTime()))
+                .collect(Collectors.toList());
+        }
+        
+        // Filter by max departure time
+        if (request.getMaxDepartureTime() != null) {
+            trips = trips.stream()
+                .filter(trip -> trip.getDepartureTime().isBefore(request.getMaxDepartureTime()))
+                .collect(Collectors.toList());
+        }
+        
+        // Filter by price range
+        if (request.getMinPrice() != null) {
+            trips = trips.stream()
+                .filter(trip -> trip.getPricePerSeat() >= request.getMinPrice())
+                .collect(Collectors.toList());
+        }
+        
+        if (request.getMaxPrice() != null) {
+            trips = trips.stream()
+                .filter(trip -> trip.getPricePerSeat() <= request.getMaxPrice())
+                .collect(Collectors.toList());
+        }
+        
+        // Filter by number of seats
+        if (request.getNumberOfSeats() != null) {
+            trips = trips.stream()
+                .filter(trip -> trip.getAvailableSeats() >= request.getNumberOfSeats())
+                .collect(Collectors.toList());
+        }
+        
+        // Filter by cities if provided (check direct departure/arrival fields first, then fallback to villes list)
+        if (request.getDepartureCity() != null && !request.getDepartureCity().trim().isEmpty()) {
+            trips = trips.stream()
+                .filter(trip -> {
+                    String needle = request.getDepartureCity().toLowerCase();
+                    // Direct mapping
+                    if (trip.getDepartureVille() != null && trip.getDepartureVille().getName() != null) {
+                        if (trip.getDepartureVille().getName().toLowerCase().contains(needle)) return true;
+                    }
+                    // Fallback: any villes linked
+                    if (trip.getVilles() != null) {
+                        return trip.getVilles().stream()
+                            .anyMatch(ville -> ville.getName() != null && ville.getName().toLowerCase().contains(needle));
+                    }
+                    return false;
+                })
+                .collect(Collectors.toList());
+        }
+        
+        if (request.getArrivalCity() != null && !request.getArrivalCity().trim().isEmpty()) {
+            trips = trips.stream()
+                .filter(trip -> {
+                    String needle = request.getArrivalCity().toLowerCase();
+                    // Direct mapping
+                    if (trip.getArrivalVille() != null && trip.getArrivalVille().getName() != null) {
+                        if (trip.getArrivalVille().getName().toLowerCase().contains(needle)) return true;
+                    }
+                    // Fallback: any villes linked
+                    if (trip.getVilles() != null) {
+                        return trip.getVilles().stream()
+                            .anyMatch(ville -> ville.getName() != null && ville.getName().toLowerCase().contains(needle));
+                    }
+                    return false;
+                })
+                .collect(Collectors.toList());
+        }
+        
+        // Apply sorting
+        if (request.getSortBy() != null) {
+            switch (request.getSortBy().toLowerCase()) {
+                case "price":
+                    trips = trips.stream()
+                        .sorted((t1, t2) -> {
+                            int comparison = Double.compare(t1.getPricePerSeat(), t2.getPricePerSeat());
+                            return "desc".equalsIgnoreCase(request.getSortOrder()) ? -comparison : comparison;
+                        })
+                        .collect(Collectors.toList());
+                    break;
+                case "time":
+                    trips = trips.stream()
+                        .sorted((t1, t2) -> {
+                            int comparison = t1.getDepartureTime().compareTo(t2.getDepartureTime());
+                            return "desc".equalsIgnoreCase(request.getSortOrder()) ? -comparison : comparison;
+                        })
+                        .collect(Collectors.toList());
+                    break;
+            }
+        }
+        
+        // Apply pagination if specified
+        if (request.getPage() != null && request.getSize() != null) {
+            int start = request.getPage() * request.getSize();
+            int end = Math.min(start + request.getSize(), trips.size());
+            if (start < trips.size()) {
+                trips = trips.subList(start, end);
+            } else {
+                trips = new ArrayList<>();
+            }
+        }
+        
+        return trips.stream()
+            .map(this::convertToTripResponse)
+            .collect(Collectors.toList());
+    }
+
+    @Override
+    public Page<TripResponse> searchTripsPageable(TripSearchRequest request, Pageable pageable) {
+        // Reuse existing logic from searchTrips but apply Pageable for sorting/pagination
+        List<Voyage> trips = voyageRepository.findByStatus(Voyage.VoyageStatus.PLANNED);
+        
+        // Apply same filters as in searchTrips(TripSearchRequest)
+        if (request.getDepartureTime() != null) {
+            trips = trips.stream()
+                .filter(trip -> trip.getDepartureTime() != null && !trip.getDepartureTime().isBefore(request.getDepartureTime()))
+                .collect(Collectors.toList());
+        }
+        if (request.getMaxDepartureTime() != null) {
+            trips = trips.stream()
+                .filter(trip -> trip.getDepartureTime() != null && !trip.getDepartureTime().isAfter(request.getMaxDepartureTime()))
+                .collect(Collectors.toList());
+        }
+        if (request.getMaxPrice() != null) {
+            trips = trips.stream()
+                .filter(trip -> trip.getPricePerSeat() != null && trip.getPricePerSeat() <= request.getMaxPrice())
+                .collect(Collectors.toList());
+        }
+        if (request.getNumberOfSeats() != null) {
+            trips = trips.stream()
+                .filter(trip -> trip.getAvailableSeats() >= request.getNumberOfSeats())
+                .collect(Collectors.toList());
+        }
+        if (request.getDepartureCity() != null && !request.getDepartureCity().trim().isEmpty()) {
+            trips = trips.stream()
+                .filter(trip -> {
+                    String needle = request.getDepartureCity().toLowerCase();
+                    if (trip.getDepartureVille() != null && trip.getDepartureVille().getName() != null) {
+                        if (trip.getDepartureVille().getName().toLowerCase().contains(needle)) return true;
+                    }
+                    if (trip.getVilles() != null) {
+                        return trip.getVilles().stream()
+                            .anyMatch(ville -> ville.getName() != null && ville.getName().toLowerCase().contains(needle));
+                    }
+                    return false;
+                })
+                .collect(Collectors.toList());
+        }
+        if (request.getArrivalCity() != null && !request.getArrivalCity().trim().isEmpty()) {
+            trips = trips.stream()
+                .filter(trip -> {
+                    String needle = request.getArrivalCity().toLowerCase();
+                    if (trip.getArrivalVille() != null && trip.getArrivalVille().getName() != null) {
+                        if (trip.getArrivalVille().getName().toLowerCase().contains(needle)) return true;
+                    }
+                    if (trip.getVilles() != null) {
+                        return trip.getVilles().stream()
+                            .anyMatch(ville -> ville.getName() != null && ville.getName().toLowerCase().contains(needle));
+                    }
+                    return false;
+                })
+                .collect(Collectors.toList());
+        }
+
+        // Convert to responses
+        List<TripResponse> responses = trips.stream()
+            .map(this::convertToTripResponse)
+            .collect(Collectors.toList());
+
+        // Apply pageable manually (in-memory pagination)
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), responses.size());
+        List<TripResponse> pageContent = start < responses.size() ? responses.subList(start, end) : new ArrayList<>();
+
+        return new PageImpl<>(pageContent, pageable, responses.size());
+    }
+    
+    @Override
     public TripResponse updateTrip(Long tripId, CreateTripRequest request, Long driverId) {
         Voyage trip = voyageRepository.findById(tripId)
             .orElseThrow(() -> new RuntimeException("Trip not found"));
@@ -167,6 +383,22 @@ public class TripServiceImpl implements TripService {
         trip.setMaxSeats(request.getMaxSeats());
         trip.setAvailableSeats(request.getMaxSeats() - currentBookings);
         
+        // Update cities if provided
+        if (request.getDepartureCity() != null && !request.getDepartureCity().trim().isEmpty()) {
+            Ville departureVille = resolveCityByName(request.getDepartureCity());
+            if (departureVille == null) {
+                throw new RuntimeException("Unknown departure city: " + request.getDepartureCity());
+            }
+            trip.setDepartureVille(departureVille);
+        }
+        if (request.getArrivalCity() != null && !request.getArrivalCity().trim().isEmpty()) {
+            Ville arrivalVille = resolveCityByName(request.getArrivalCity());
+            if (arrivalVille == null) {
+                throw new RuntimeException("Unknown arrival city: " + request.getArrivalCity());
+            }
+            trip.setArrivalVille(arrivalVille);
+        }
+
         trip = voyageRepository.save(trip);
         
         // Update GPS points
@@ -323,6 +555,20 @@ public class TripServiceImpl implements TripService {
             .map(this::convertToBookingResponse)
             .collect(Collectors.toList());
     }
+
+    @Override
+    public Page<BookingResponse> getBookingsByPassengerPageable(Long passengerId, Pageable pageable) {
+        List<Reservation> reservations = reservationRepository.findByPassagerId(passengerId);
+        List<BookingResponse> responses = reservations.stream()
+            .map(this::convertToBookingResponse)
+            .collect(Collectors.toList());
+        
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), responses.size());
+        List<BookingResponse> pageContent = start < responses.size() ? responses.subList(start, end) : new ArrayList<>();
+        
+        return new PageImpl<>(pageContent, pageable, responses.size());
+    }
     
     @Override
     public List<BookingResponse> getBookingsByTrip(Long tripId) {
@@ -332,6 +578,30 @@ public class TripServiceImpl implements TripService {
             .collect(Collectors.toList());
     }
     
+    @Override
+    public List<BookingResponse> getBookingsByDriver(Long driverId) {
+        List<Voyage> driverTrips = voyageRepository.findByConducteurId(driverId);
+        List<BookingResponse> bookingResponses = new ArrayList<>();
+        for (Voyage trip : driverTrips) {
+            List<Reservation> reservations = reservationRepository.findByVoyageId(trip.getId());
+            for (Reservation reservation : reservations) {
+                bookingResponses.add(convertToBookingResponse(reservation));
+            }
+        }
+        return bookingResponses;
+    }
+
+    @Override
+    public Page<BookingResponse> getBookingsByDriverPageable(Long driverId, Pageable pageable) {
+        List<BookingResponse> bookingResponses = getBookingsByDriver(driverId);
+        
+        int start = (int) pageable.getOffset();
+        int end = Math.min(start + pageable.getPageSize(), bookingResponses.size());
+        List<BookingResponse> pageContent = start < bookingResponses.size() ? bookingResponses.subList(start, end) : new ArrayList<>();
+        
+        return new PageImpl<>(pageContent, pageable, bookingResponses.size());
+    }
+
     @Override
     public BookingResponse confirmBooking(Long bookingId, Long driverId) {
         Reservation reservation = reservationRepository.findById(bookingId)
@@ -353,6 +623,35 @@ public class TripServiceImpl implements TripService {
         
         // Send notification to passenger
         notificationService.notifyBookingConfirmed(reservation.getPassagerId(), bookingId);
+        
+        return convertToBookingResponse(reservation);
+    }
+    
+    @Override
+    public BookingResponse declineBooking(Long bookingId, Long driverId) {
+        Reservation reservation = reservationRepository.findById(bookingId)
+            .orElseThrow(() -> new RuntimeException("Booking not found"));
+        
+        Voyage trip = voyageRepository.findById(reservation.getVoyageId())
+            .orElseThrow(() -> new RuntimeException("Trip not found"));
+        
+        if (!trip.getConducteurId().equals(driverId)) {
+            throw new RuntimeException("You can only decline bookings for your own trips");
+        }
+        
+        if (reservation.getStatus() != Reservation.ReservationStatus.PENDING) {
+            throw new RuntimeException("Can only decline pending bookings");
+        }
+        
+        // Mark booking as cancelled (declined) and restore seats
+        reservation.setStatus(Reservation.ReservationStatus.CANCELLED);
+        reservation = reservationRepository.save(reservation);
+        
+        trip.setAvailableSeats(trip.getAvailableSeats() + reservation.getNumberOfSeats());
+        voyageRepository.save(trip);
+        
+        // Notify passenger
+        notificationService.notifyBookingDeclined(reservation.getPassagerId(), bookingId);
         
         return convertToBookingResponse(reservation);
     }
@@ -407,21 +706,34 @@ public class TripServiceImpl implements TripService {
     
     @Override
     public List<TripResponse> getUpcomingTrips(Long userId) {
-        // Get trips where user is driver or has confirmed bookings
-        List<Voyage> driverTrips = voyageRepository.findByConducteurIdAndStatus(userId, Voyage.VoyageStatus.PLANNED);
-        List<Reservation> passengerBookings = reservationRepository.findByPassagerIdAndStatus(userId, Reservation.ReservationStatus.CONFIRMED);
-        
-        List<Long> tripIds = passengerBookings.stream()
+        // Upcoming = future trips where user is driver (PLANNED or ACTIVE) or passenger with CONFIRMED booking (trip PLANNED or ACTIVE)
+        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+
+        // Driver upcoming trips: include PLANNED or ACTIVE with departure in the future (or null departure treated as upcoming)
+        List<Voyage> allDriverTrips = voyageRepository.findByConducteurId(userId);
+        List<Voyage> driverUpcoming = allDriverTrips.stream()
+            .filter(trip -> trip.getStatus() == Voyage.VoyageStatus.PLANNED || trip.getStatus() == Voyage.VoyageStatus.ACTIVE)
+            .filter(trip -> trip.getDepartureTime() == null || !trip.getDepartureTime().isBefore(now))
+            .collect(Collectors.toList());
+
+        // Passenger upcoming trips: CONFIRMED bookings, trip PLANNED or ACTIVE and in the future
+        List<Reservation> passengerBookingsAll = reservationRepository.findByPassagerId(userId);
+        List<Long> upcomingTripIdsForPassenger = passengerBookingsAll.stream()
+            .filter(b -> b.getStatus() == Reservation.ReservationStatus.CONFIRMED)
             .map(Reservation::getVoyageId)
             .collect(Collectors.toList());
-        
-        List<Voyage> passengerTrips = voyageRepository.findAllById(tripIds).stream()
-            .filter(trip -> trip.getStatus() == Voyage.VoyageStatus.PLANNED)
+
+        List<Voyage> passengerUpcoming = voyageRepository.findAllById(upcomingTripIdsForPassenger).stream()
+            .filter(trip -> trip.getStatus() == Voyage.VoyageStatus.PLANNED || trip.getStatus() == Voyage.VoyageStatus.ACTIVE)
+            .filter(trip -> trip.getDepartureTime() == null || !trip.getDepartureTime().isBefore(now))
             .collect(Collectors.toList());
-        
-        driverTrips.addAll(passengerTrips);
-        
-        return driverTrips.stream()
+
+        // Merge and de-duplicate
+        java.util.Map<Long, Voyage> unique = new java.util.HashMap<>();
+        for (Voyage v : driverUpcoming) unique.put(v.getId(), v);
+        for (Voyage v : passengerUpcoming) unique.put(v.getId(), v);
+
+        return unique.values().stream()
             .map(this::convertToTripResponse)
             .collect(Collectors.toList());
     }
@@ -448,6 +760,16 @@ public class TripServiceImpl implements TripService {
     }
     
     // Helper methods
+    private Ville resolveCityByName(String name) {
+        if (name == null) return null;
+        String trimmed = name.trim();
+        // Try exact match first
+        return villeRepository.findByName(trimmed)
+            .orElseGet(() -> {
+                List<Ville> matches = villeRepository.findByNameContainingIgnoreCase(trimmed);
+                return matches.isEmpty() ? null : matches.get(0);
+            });
+    }
     private void createGPSPoints(Long tripId, CreateTripRequest request) {
         // Create start point
         if (request.getDeparturePoint() != null) {
@@ -496,6 +818,18 @@ public class TripServiceImpl implements TripService {
         response.setCreatedAt(trip.getCreatedAt());
         response.setUpdatedAt(trip.getUpdatedAt());
         
+        // Populate direct city names for convenience in clients
+        if (trip.getDepartureVille() != null && trip.getDepartureVille().getName() != null) {
+            response.setDepartureCity(trip.getDepartureVille().getName());
+        } else {
+            response.setDepartureCity("Unknown Departure");
+        }
+        if (trip.getArrivalVille() != null && trip.getArrivalVille().getName() != null) {
+            response.setArrivalCity(trip.getArrivalVille().getName());
+        } else {
+            response.setArrivalCity("Unknown Arrival");
+        }
+
         // Get driver information
         User driver = userRepository.findById(trip.getConducteurId()).orElse(null);
         if (driver instanceof Conducteur) {
@@ -582,6 +916,18 @@ public class TripServiceImpl implements TripService {
             tripInfo.setPricePerSeat(trip.getPricePerSeat());
             tripInfo.setDescription(trip.getDescription());
             tripInfo.setStatus(trip.getStatus().name());
+
+            // Populate trip city names
+            if (trip.getDepartureVille() != null && trip.getDepartureVille().getName() != null) {
+                tripInfo.setDepartureCity(trip.getDepartureVille().getName());
+            } else {
+                tripInfo.setDepartureCity("Unknown Departure");
+            }
+            if (trip.getArrivalVille() != null && trip.getArrivalVille().getName() != null) {
+                tripInfo.setArrivalCity(trip.getArrivalVille().getName());
+            } else {
+                tripInfo.setArrivalCity("Unknown Arrival");
+            }
             
             // Get driver information
             User driver = userRepository.findById(trip.getConducteurId()).orElse(null);
@@ -640,6 +986,7 @@ public class TripServiceImpl implements TripService {
                 optionMap.put("description", option.getDescription());
                 optionMap.put("price", option.getPrice());
                 optionMap.put("isActive", option.getIsActive());
+                optionMap.put("icon_name", option.getIconName());
                 return optionMap;
             })
             .collect(Collectors.toList());

@@ -203,9 +203,12 @@ class _LoginScreenState extends State<LoginScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Text(
-                              "Don't have an account? ",
-                              style: TextStyle(color: Colors.grey),
+                            Flexible(
+                              child: Text(
+                                "Don't have an account? ",
+                                style: TextStyle(color: Colors.grey),
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             TextButton(
                               onPressed: () {

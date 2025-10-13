@@ -2,6 +2,7 @@ package esprit.pfe.covoiturage_final.repositories;
 
 import esprit.pfe.covoiturage_final.entities.Paiement;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -29,4 +30,12 @@ public interface PaiementRepository extends JpaRepository<Paiement, Long> {
     @Query("SELECT SUM(p.amount) FROM Paiement p WHERE p.status = 'COMPLETED' AND p.paymentDate BETWEEN :startDate AND :endDate")
     Double getTotalRevenueBetween(@Param("startDate") LocalDateTime startDate, 
                                 @Param("endDate") LocalDateTime endDate);
+    
+    Long countByStatus(Paiement.PaymentStatus status);
+    
+    // Admin dashboard methods
+    List<Paiement> findByPaymentDateAfter(LocalDateTime date);
+
+    @Modifying
+    void deleteByReservationIdIn(List<Long> reservationIds);
 }

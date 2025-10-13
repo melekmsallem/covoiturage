@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "733140225733",
+    "project_id": "rideshare-28",
+    "storage_bucket": "rideshare-28.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:733140225733:android:01acbe82bef95900c36aac",
+        "android_client_info": {
+          "package_name": "com.example.covoiturage_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBcvMdxuUyvF_Cu7-fGyjxfxwtX4c9ot20"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,8 +1,11 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 class AuthService {
-  static const String baseUrl = 'http://localhost:9090/api/auth';
+  static final String baseUrl = kIsWeb
+      ? 'http://localhost:8081/api/auth'
+      : 'http://192.168.1.14:8081/api/auth';
 
   // Sign In
   Future<Map<String, dynamic>> signIn(String usernameOrEmail, String password) async {

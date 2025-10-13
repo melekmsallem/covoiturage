@@ -21,9 +21,6 @@ public class Admin extends User {
     @Column(name = "permissions")
     private String permissions;
     
-    @Column(name = "last_login")
-    private String lastLogin;
-    
     // Relationships will be managed by Paiement entity
     
     public Admin(String username, String email, String password, String firstName, String lastName, String phoneNumber) {

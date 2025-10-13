@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
+import 'phone_verification_screen.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -30,7 +32,7 @@ class _SignupScreenState extends State<SignupScreen> {
   bool _obscurePassword = true;
   String _selectedRole = 'PASSAGER';
 
-  final List<String> _roles = ['PASSAGER', 'CONDUCTEUR', 'ADMIN'];
+  final List<String> _roles = ['PASSAGER', 'CONDUCTEUR'];
 
   @override
   void dispose() {
@@ -52,6 +54,32 @@ class _SignupScreenState extends State<SignupScreen> {
   Future<void> _signup() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // On mobile: Verify phone first
+    // On web: Skip phone verification (Firebase Phone Auth doesn't work well on web)
+    if (kIsWeb) {
+      // Web - create account directly
+      await _createAccount();
+    } else {
+      // Mobile - verify phone first
+      if (mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => PhoneVerificationScreen(
+              phoneNumber: _phoneController.text.trim(),
+              onVerificationSuccess: () async {
+                // Phone verified! Now create the account
+                Navigator.pop(context); // Close verification screen
+                await _createAccount();
+              },
+            ),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _createAccount() async {
     setState(() => _isLoading = true);
 
     try {
@@ -76,8 +104,10 @@ class _SignupScreenState extends State<SignupScreen> {
         await authProvider.login(response['token'], response);
         
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created successfully!'),
+          SnackBar(
+            content: Text(kIsWeb 
+              ? 'Account created successfully!' 
+              : 'Account created successfully! Phone verified ✓'),
             backgroundColor: Colors.green,
           ),
         );

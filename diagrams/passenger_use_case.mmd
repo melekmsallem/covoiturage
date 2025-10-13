@@ -1,0 +1,21 @@
+flowchart TD
+  P([Passenger]):::actor
+
+  UC1((Sign In / Sign Up))
+  UC2((Search Voyages))
+  UC3((View Voyage Details))
+  UC4((Create Reservation))
+  UC5((View My Reservations))
+  UC6((Cancel Reservation))
+  UC7((Rate Driver))
+
+  P --- UC1
+  P --- UC2
+  P --- UC3
+  P --- UC4
+  P --- UC5
+  P --- UC6
+  P --- UC7
+
+  classDef actor fill:#fff,stroke:#333,stroke-width:1;
+

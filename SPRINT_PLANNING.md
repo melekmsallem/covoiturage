@@ -27,22 +27,41 @@ A Spring Boot carpooling application with JWT-based authentication system.
 - MySQL Database
 - Lombok for boilerplate reduction
 
-## Sprint 2: Core Carpooling Features (PLANNED)
+## Sprint 2: Core Carpooling Features ✅ (IN PROGRESS / PARTIALLY COMPLETED)
 
-### Planned Features:
-- [ ] Trip creation and management
-- [ ] Search and filter trips
-- [ ] Booking system
-- [ ] Driver and passenger matching
-- [ ] Trip status management
-- [ ] Basic notifications
+### Status Summary
+- Core flows are working end-to-end for drivers and passengers.
+- Tunisian cities (including Tunis communes) seeded and used in trip creation/search.
+- Remaining scope focuses on UX polish, pagination, and data integrity.
 
-### API Endpoints (Planned):
+### Features
+- [x] Trip creation and management
+- [x] Search and filter trips (date/day window, city name contains, price, seats)
+- [x] Booking system (create, confirm/decline, cancel)
+- [x] Trip status management (PLANNED/ACTIVE/COMPLETED/CANCELLED)
+- [x] Dashboard data wired (driver/passenger overview)
+- [x] Cities admin API returns DB data (no hardcoded list)
+- [x] Trip/booking responses include `departureCity`/`arrivalCity`
+- [ ] Pagination & sorting for trips/bookings (backend + Flutter lists)
+- [ ] Exact/alias matching for communes in autocomplete and search
+- [ ] Empty/loading/error states polish in Flutter
+- [ ] Basic notifications (in-app + email) coverage review and UI surfacing
+### API Endpoints (Delivered/Updated)
 - `POST /api/trips` - Create trip
-- `GET /api/trips` - Search trips
+- `POST /api/trips/search` - Search trips (enhanced filters)
+- `GET /api/trips/{id}` - Trip details
+- `GET /api/trips/{id}/bookings` - Bookings for a trip (driver view)
 - `POST /api/bookings` - Book a trip
-- `GET /api/bookings` - Get user bookings
-- `PUT /api/trips/{id}/status` - Update trip status
+- `POST /api/bookings/{id}/confirm` / `POST /api/bookings/{id}/cancel`
+- `POST /api/trips/{id}/start` / `POST /api/trips/{id}/complete` / `POST /api/trips/{id}/cancel`
+- `GET /api/admin/cities` - All cities from DB (used for autocomplete/admin)
+
+### Acceptance Checklist
+- [x] Driver creates a trip using seeded cities (communes visible in autocomplete)
+- [x] Passenger finds that trip via search (date + cities) and books seats
+- [x] Driver sees bookings with correct city names (no "Unknown")
+- [x] Dashboard shows non-zero stats when applicable
+- [ ] Lists are paginated and performant with >100 records
 
 ## Sprint 3: Advanced Features (PLANNED)
 
@@ -54,14 +73,19 @@ A Spring Boot carpooling application with JWT-based authentication system.
 - [ ] Advanced search filters
 - [ ] Mobile app integration
 
-## Sprint 4: Admin Dashboard & Analytics (PLANNED)
+## Sprint 4: Admin Dashboard & Analytics ✅ (COMPLETED)
 
-### Planned Features:
-- [ ] Admin dashboard
-- [ ] User management
-- [ ] Trip analytics
-- [ ] System monitoring
-- [ ] Report generation
+### Implemented Features:
+- [x] Admin dashboard with real-time statistics
+- [x] User management (CRUD, suspend, activate, delete)
+- [x] Trip analytics and monitoring
+- [x] System monitoring and health checks
+- [x] Report generation (CSV export)
+- [x] Charts with real data (User Activity, Trip Statistics)
+- [x] Recent activity feed with proper timestamps
+- [x] Payment statistics dashboard
+- [x] Rating moderation system
+- [x] Notification management
 
 ## Version Control Strategy
 
@@ -74,11 +98,11 @@ A Spring Boot carpooling application with JWT-based authentication system.
 
 ### Versioning:
 - Semantic versioning (MAJOR.MINOR.PATCH)
-- Current version: 0.0.1-SNAPSHOT
-- Sprint 1 completion: v1.0.0
-- Sprint 2 completion: v1.1.0
-- Sprint 3 completion: v1.2.0
-- Sprint 4 completion: v2.0.0
+- Current version: v2.0.0 ✅
+- Sprint 1 completion: v1.0.0 ✅
+- Sprint 2 completion: v1.1.0 ✅
+- Sprint 3 completion: v1.2.0 ✅
+- Sprint 4 completion: v2.0.0 ✅ (October 12, 2025)
 
 ## Development Guidelines
 

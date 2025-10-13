@@ -30,6 +30,9 @@ public class Avis {
     @Column(name = "is_visible")
     private Boolean isVisible = true;
     
+    @Column(name = "status")
+    private String status = "PENDING"; // PENDING, APPROVED, REJECTED
+    
     // Relationships
     @Column(name = "user_id", nullable = false)
     private Long userId;

@@ -55,6 +55,18 @@ public class User implements UserDetails {
     @Column(name = "is_active")
     private Boolean isActive = true;
     
+    @Column(name = "is_verified")
+    private Boolean isVerified = false;
+    
+    @Column(name = "last_login")
+    private LocalDateTime lastLogin;
+    
+    @Column(name = "suspension_reason")
+    private String suspensionReason;
+    
+    @Column(name = "suspension_end_date")
+    private LocalDateTime suspensionEndDate;
+    
     // Relationships will be managed by other entities
     
     @PrePersist

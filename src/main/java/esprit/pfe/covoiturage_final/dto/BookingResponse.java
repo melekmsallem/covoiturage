@@ -36,6 +36,10 @@ public class BookingResponse {
         private String description;
         private String status;
         
+        // Location information
+        private String departureCity;
+        private String arrivalCity;
+        
         // Driver information
         private String driverName;
         private String vehicleModel;

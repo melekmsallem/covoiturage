@@ -24,6 +24,10 @@ public class TripResponse {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     
+    // Direct city information for easier frontend consumption
+    private String departureCity;
+    private String arrivalCity;
+    
     // Driver information
     private DriverInfo driver;
     
@@ -72,6 +76,10 @@ public class TripResponse {
         private String name;
         private String description;
         private Double price;
+        private String category;
+        private String iconName;
+        private Boolean isActive;
+        private Integer sortOrder;
     }
     
     @Data

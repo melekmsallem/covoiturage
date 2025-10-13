@@ -125,14 +125,15 @@ public class UserServiceImpl implements UserService {
 
     @Override
     public AuthResponse signIn(SignInRequest signInRequest) {
+        String identifier = signInRequest.getUsernameOrEmail() == null ? "" : signInRequest.getUsernameOrEmail().trim();
         Authentication authentication = authenticationManager.authenticate(
-            new UsernamePasswordAuthenticationToken(signInRequest.getUsernameOrEmail(), signInRequest.getPassword())
+            new UsernamePasswordAuthenticationToken(identifier, signInRequest.getPassword())
         );
 
         SecurityContextHolder.getContext().setAuthentication(authentication);
         String jwt = jwtUtils.generateJwtToken(authentication);
 
-        User user = userRepository.findByUsernameOrEmail(signInRequest.getUsernameOrEmail(), signInRequest.getUsernameOrEmail())
+        User user = userRepository.findByUsernameOrEmail(identifier, identifier)
             .orElseThrow(() -> new RuntimeException("User not found"));
 
         return new AuthResponse(jwt, "Bearer", user.getId(), user.getUsername(), 

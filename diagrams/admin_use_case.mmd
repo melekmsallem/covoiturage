@@ -1,0 +1,15 @@
+flowchart TD
+  A([Admin]):::actor
+
+  UC1((Manage Users))
+  UC2((View System Metrics))
+  UC3((Moderate Content))
+  UC4((Configure Options/Cities))
+
+  A --- UC1
+  A --- UC2
+  A --- UC3
+  A --- UC4
+
+  classDef actor fill:#fff,stroke:#333,stroke-width:1;
+

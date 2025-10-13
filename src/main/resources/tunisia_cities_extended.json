@@ -1,0 +1,17 @@
+﻿[
+  { "name": "Ariana", "codePostal": "2080", "pays": "Tunisia", "latitude": 36.8625, "longitude": 10.1956 },
+  { "name": "La Marsa", "codePostal": "2070", "pays": "Tunisia", "latitude": 36.8792, "longitude": 10.2582 },
+  { "name": "Carthage", "codePostal": "2016", "pays": "Tunisia", "latitude": 36.8597, "longitude": 10.3255 },
+  { "name": "Le Kram", "codePostal": "2015", "pays": "Tunisia", "latitude": 36.8333, "longitude": 10.2917 },
+  { "name": "La Goulette", "codePostal": "2060", "pays": "Tunisia", "latitude": 36.8269, "longitude": 10.3056 },
+  { "name": "La Soukra", "codePostal": "2036", "pays": "Tunisia", "latitude": 36.8750, "longitude": 10.2333 },
+  { "name": "RadÃ¨s", "codePostal": "2040", "pays": "Tunisia", "latitude": 36.7667, "longitude": 10.2833 },
+  { "name": "Rades", "codePostal": "2040", "pays": "Tunisia", "latitude": 36.7667, "longitude": 10.2833 },
+  { "name": "Ezzahra", "codePostal": "2050", "pays": "Tunisia", "latitude": 36.7333, "longitude": 10.3167 },
+  { "name": "Hammam-Lif", "codePostal": "2050", "pays": "Tunisia", "latitude": 36.7167, "longitude": 10.3333 },
+  { "name": "Hammam-Chott", "codePostal": "2050", "pays": "Tunisia", "latitude": 36.7000, "longitude": 10.3500 },
+  { "name": "Bou Mhel el-Bassatine", "codePostal": "2050", "pays": "Tunisia", "latitude": 36.7333, "longitude": 10.2667 },
+  { "name": "MÃ©grine", "codePostal": "2033", "pays": "Tunisia", "latitude": 36.7667, "longitude": 10.2333 },
+  { "name": "Megrine", "codePostal": "2033", "pays": "Tunisia", "latitude": 36.7667, "longitude": 10.2333 },
+  { "name": "Le Mourouj", "codePostal": "2074", "pays": "Tunisia", "latitude": 36.7333, "longitude": 10.2000 }
+]
