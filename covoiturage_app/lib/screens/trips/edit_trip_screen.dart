@@ -257,8 +257,8 @@ class _EditTripScreenState extends State<EditTripScreen> {
       final request = {
         'departureTime': _departureTime!.toIso8601String(),
         'arrivalTime': _arrivalTime!.toIso8601String(),
-        'pricePerSeat': double.parse(_priceController.text),
-        'maxSeats': int.parse(_maxSeatsController.text),
+        'pricePerSeat': double.tryParse(_priceController.text) ?? 0.0,
+        'maxSeats': int.tryParse(_maxSeatsController.text) ?? 1,
         'description': _descriptionController.text,
         'departureCity': _selectedDepartureCity!['name'],
         'arrivalCity': _selectedArrivalCity!['name'],

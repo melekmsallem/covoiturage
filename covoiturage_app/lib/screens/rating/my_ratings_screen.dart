@@ -203,7 +203,7 @@ class _MyRatingsScreenState extends State<MyRatingsScreen> {
                                   Row(
                                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                     children: [
-                                      _buildRatingStars(rating['rating']?.toDouble() ?? 0.0),
+                                      _buildRatingStars((rating['rating'] as num?)?.toDouble() ?? 0.0),
                                       _buildStatusBadge(rating['status'] ?? 'UNKNOWN'),
                                     ],
                                   ),

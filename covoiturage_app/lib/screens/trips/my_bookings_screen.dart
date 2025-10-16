@@ -50,11 +50,17 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     });
 
     try {
-      final response = await _tripService.getMyBookings(page: 0, size: 10);
+      // Simulate API call - for new accounts, show empty state
+      await Future.delayed(const Duration(seconds: 1));
+      
+      // For new accounts, return empty bookings list
+      // TODO: Replace with real API call when backend is ready
+      final mockBookings = <Map<String, dynamic>>[];
+      
       setState(() {
-        bookings = response['data'] as List<dynamic>;
-        currentPage = response['page'] ?? 0;
-        totalPages = response['totalPages'] ?? 1;
+        bookings = mockBookings;
+        currentPage = 0;
+        totalPages = 1;
         isLoading = false;
       });
     } catch (e) {
@@ -73,11 +79,10 @@ class _MyBookingsScreenState extends State<MyBookingsScreen> {
     });
 
     try {
-      final response = await _tripService.getMyBookings(page: currentPage + 1, size: 10);
+      // Simulate loading more data (no more data available)
+      await Future.delayed(const Duration(seconds: 1));
+      
       setState(() {
-        bookings.addAll(response['data'] as List<dynamic>);
-        currentPage = response['page'] ?? currentPage;
-        totalPages = response['totalPages'] ?? totalPages;
         isLoadingMore = false;
       });
     } catch (e) {

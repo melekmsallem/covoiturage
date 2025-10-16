@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -191,6 +192,23 @@ public class AdminController {
             return ResponseEntity.ok(bookings);
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
+        }
+    }
+    
+    /**
+     * Delete a booking (Admin only)
+     */
+    @DeleteMapping("/bookings/{bookingId}")
+    public ResponseEntity<?> deleteBooking(@PathVariable Long bookingId) {
+        try {
+            boolean deleted = adminService.deleteBooking(bookingId);
+            if (deleted) {
+                return ResponseEntity.ok().body(Map.of("message", "Booking deleted successfully"));
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
     
@@ -705,6 +723,38 @@ public class AdminController {
         } catch (Exception e) {
             return ResponseEntity.badRequest().build();
         }
+    }
+    
+    /**
+     * Get recent notifications
+     */
+    @GetMapping("/notifications/recent")
+    public ResponseEntity<List<Map<String, Object>>> getRecentNotifications(
+            @RequestParam(defaultValue = "10") int limit) {
+        try {
+            List<Map<String, Object>> notifications = adminService.getRecentNotifications(limit);
+            return ResponseEntity.ok(notifications);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().build();
+        }
+    }
+    
+    // ==================== CACHE MANAGEMENT ====================
+    
+    /**
+     * Force cache clear - returns current timestamp for cache busting
+     */
+    @GetMapping("/cache/clear")
+    public ResponseEntity<Map<String, Object>> clearCache() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("timestamp", System.currentTimeMillis());
+        response.put("message", "Cache cleared successfully");
+        response.put("action", "Please refresh your browser (Ctrl+F5 or Cmd+Shift+R)");
+        return ResponseEntity.ok()
+                .header("Cache-Control", "no-cache, no-store, must-revalidate")
+                .header("Pragma", "no-cache")
+                .header("Expires", "0")
+                .body(response);
     }
     
     // ==================== SYSTEM MONITORING ====================

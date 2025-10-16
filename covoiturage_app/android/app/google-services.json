@@ -8,9 +8,9 @@
     {
       "client_info": {
         "mobilesdk_app_id": "1:733140225733:android:01acbe82bef95900c36aac",
-        "android_client_info": {
-          "package_name": "com.example.covoiturage_app"
-        }
+         "android_client_info": {
+           "package_name": "com.covoiturage.covoiturage_app"
+         }
       },
       "oauth_client": [],
       "api_key": [

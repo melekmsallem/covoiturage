@@ -112,7 +112,11 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        widget.onVerificationSuccess();
+        // Add a small delay to ensure UI is stable before navigation
+        await Future.delayed(const Duration(milliseconds: 500));
+        if (mounted) {
+          widget.onVerificationSuccess();
+        }
       }
     } else {
       if (mounted) {
@@ -298,6 +302,7 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 16),
           ],
         ),
       ),
@@ -310,6 +315,16 @@ class _PhoneVerificationScreenState extends State<PhoneVerificationScreen> {
     super.dispose();
   }
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

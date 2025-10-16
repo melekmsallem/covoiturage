@@ -69,6 +69,7 @@ public class SecurityConfig {
                     // Admin dashboard - temporarily allow access for debugging
                     .requestMatchers("/admin-dashboard.html").permitAll()
                     .requestMatchers("/admin-dashboard-new.html").permitAll()
+                    .requestMatchers("/admin-dashboard-fixed.html").permitAll()
                     
                     // Static resources
                     .requestMatchers("/js/**").permitAll()

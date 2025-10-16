@@ -33,18 +33,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
 
     try {
-      final overview = await _dashboardService.getDashboardOverview();
-      if (overview != null) {
-        setState(() {
-          dashboardData = overview;
-          isLoading = false;
-        });
-      } else {
-        setState(() {
-          errorMessage = 'Failed to load dashboard data';
-          isLoading = false;
-        });
-      }
+      // Simulate dashboard data loading with mock data
+      await Future.delayed(const Duration(seconds: 1));
+      
+      // Create mock dashboard data
+      final mockData = {
+        'totalTrips': 0,
+        'completedTrips': 0,
+        'upcomingTrips': 0,
+        'totalEarnings': 0.0,
+        'rating': 0.0,
+        'recentTrips': [],
+        'upcomingTrips': [],
+      };
+      
+      setState(() {
+        dashboardData = mockData;
+        isLoading = false;
+      });
     } catch (e) {
       setState(() {
         errorMessage = 'Error: $e';
@@ -60,7 +66,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final bool isPassenger = roleString.contains('PASS');
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Dashboard'),
         backgroundColor: Colors.blue[600],
         foregroundColor: Colors.white,
         actions: [
@@ -147,36 +152,42 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget _buildWelcomeSection() {
     final user = context.watch<AuthProvider>().user;
     final String roleString = (user?['role'] ?? '').toString().toUpperCase();
-    // Treat DRIVER or French CONDUCTEUR/CONDUCT as driver
     final bool isDriver = roleString.contains('DRIVER') || roleString.contains('CONDUCT');
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [Colors.blue[600]!, Colors.blue[400]!],
+          colors: [colorScheme.primary, colorScheme.primaryContainer],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.primary.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             'Welcome back!',
-            style: TextStyle(
-              fontSize: 24,
+            style: Theme.of(context).textTheme.headlineMedium?.copyWith(
               fontWeight: FontWeight.bold,
-              color: Colors.white,
+              color: colorScheme.onPrimary,
             ),
           ),
           const SizedBox(height: 8),
           Text(
             'Here\'s your carpooling overview',
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.white.withOpacity(0.9),
+            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+              color: colorScheme.onPrimary.withOpacity(0.9),
             ),
           ),
           const SizedBox(height: 16),
@@ -278,38 +289,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   Widget _buildStatCard(String title, String value, IconData icon) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: colorScheme.shadow.withOpacity(0.1),
             spreadRadius: 1,
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+            blurRadius: 8,
+            offset: const Offset(0, 4),
           ),
         ],
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.1),
+        ),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: Colors.blue[600], size: 32),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Colors.black87,
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              icon, 
+              color: colorScheme.primary, 
+              size: 28,
             ),
           ),
+          const SizedBox(height: 12),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 4),
           Text(
             title,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey[600],
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: colorScheme.onSurface.withOpacity(0.7),
+              fontWeight: FontWeight.w500,
             ),
             textAlign: TextAlign.center,
           ),
@@ -354,7 +381,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final departureCity = trip['departureCity'] as String? ?? 'Unknown';
     final arrivalCity = trip['arrivalCity'] as String? ?? 'Unknown';
     final departureTime = trip['departureTime'] as String? ?? '';
-    final price = trip['price'] as double? ?? (trip['pricePerSeat'] as num?)?.toDouble() ?? 0.0;
+    final price = (trip['price'] as num?)?.toDouble() ?? (trip['pricePerSeat'] as num?)?.toDouble() ?? 0.0;
     final status = trip['status'] as String? ?? '';
 
     final user = context.read<AuthProvider>().user;
@@ -365,26 +392,43 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final int maxSeats = (trip['maxSeats'] as num?)?.toInt() ?? 0;
     final int confirmedSeats = (maxSeats - availableSeats) < 0 ? 0 : (maxSeats - availableSeats);
 
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey[300]!),
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: colorScheme.outline.withOpacity(0.2),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withOpacity(0.05),
+            spreadRadius: 1,
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         children: [
           Container(
-            width: 50,
-            height: 50,
+            width: 56,
+            height: 56,
             decoration: BoxDecoration(
-              color: isUpcoming ? Colors.blue[100] : Colors.green[100],
-              borderRadius: BorderRadius.circular(25),
+              color: isUpcoming 
+                ? colorScheme.primaryContainer 
+                : colorScheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(
-              isUpcoming ? Icons.schedule : Icons.check,
-              color: isUpcoming ? Colors.blue[600] : Colors.green[600],
+              isUpcoming ? Icons.schedule : Icons.check_circle,
+              color: isUpcoming 
+                ? colorScheme.primary 
+                : colorScheme.secondary,
+              size: 28,
             ),
           ),
           const SizedBox(width: 16),
@@ -394,17 +438,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
               children: [
                 Text(
                   '$departureCity → $arrivalCity',
-                  style: const TextStyle(
-                    fontSize: 16,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.bold,
+                    color: colorScheme.onSurface,
                   ),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   'Departure: ${_formatDateTime(departureTime)}',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey[600],
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurface.withOpacity(0.7),
                   ),
                 ),
                 const SizedBox(height: 4),

@@ -40,7 +40,7 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
 
       // Load bookings for each trip
       for (var trip in trips) {
-        final tripId = trip['id'] as int;
+        final tripId = (trip['id'] as num?)?.toInt() ?? 0;
         try {
           final bookings = await _tripService.getTripBookings(tripId);
           print('DEBUG: Loaded ${bookings.length} bookings for trip $tripId');
@@ -246,7 +246,7 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
                         itemCount: _myTrips.length,
                         itemBuilder: (context, index) {
                           final trip = _myTrips[index];
-                          final tripId = trip['id'] as int;
+                          final tripId = (trip['id'] as num?)?.toInt() ?? 0;
                           final bookings = _tripBookings[tripId] ?? [];
                           return _buildTripCard(trip, bookings);
                         },
@@ -257,8 +257,8 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
 
   Widget _buildTripCard(Map<String, dynamic> trip, List<dynamic> bookings) {
     final departureTime = DateTime.parse(trip['departureTime']);
-    final price = trip['pricePerSeat'] as double;
-    final availableSeats = trip['availableSeats'] as int;
+    final price = (trip['pricePerSeat'] as num?)?.toDouble() ?? 0.0;
+    final availableSeats = (trip['availableSeats'] as num?)?.toInt() ?? 0;
     final pendingBookings = bookings.where((b) => b['status'] == 'PENDING').toList();
     final confirmedBookings = bookings.where((b) => b['status'] == 'CONFIRMED').toList();
 

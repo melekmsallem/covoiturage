@@ -18,9 +18,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
     final trip = widget.trip;
     final departureTime = DateTime.parse(trip['departureTime']);
     final arrivalTime = DateTime.parse(trip['arrivalTime']);
-    final price = trip['pricePerSeat'] as double;
-    final availableSeats = trip['availableSeats'] as int;
-    final maxSeats = trip['maxSeats'] as int;
+    final price = (trip['pricePerSeat'] as num?)?.toDouble() ?? 0.0;
+    final availableSeats = (trip['availableSeats'] as num?)?.toInt() ?? 0;
+    final maxSeats = (trip['maxSeats'] as num?)?.toInt() ?? 0;
     final driver = trip['driver'];
     final options = trip['options'] as List<dynamic>? ?? [];
     final points = trip['points'] as List<dynamic>? ?? [];
@@ -200,7 +200,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                           children: [
                             ...List.generate(5, (index) {
                               return Icon(
-                                index < (driver['rating'] as double).round()
+                                index < ((driver['rating'] as num?)?.toDouble() ?? 0.0).round()
                                     ? Icons.star
                                     : Icons.star_border,
                                 size: 16,
@@ -388,7 +388,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
   }
 
   Widget _buildBookingSection(Map<String, dynamic> trip) {
-    final availableSeats = trip['availableSeats'] as int;
+    final availableSeats = (trip['availableSeats'] as num?)?.toInt() ?? 0;
     final canBook = availableSeats > 0;
 
     return Container(

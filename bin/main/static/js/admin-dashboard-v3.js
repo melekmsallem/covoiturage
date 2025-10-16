@@ -1,4 +1,9 @@
 // Admin Dashboard JavaScript
+// Prevent double-initialization if the script is accidentally included twice
+if (!window.__ADMIN_DASH_V2_INIT_GUARD__) {
+    window.__ADMIN_DASH_V2_INIT_GUARD__ = true;
+}
+
 class AdminDashboard {
     constructor() {
         this.baseUrl = 'http://localhost:8081/api';
@@ -8,14 +13,33 @@ class AdminDashboard {
         this.pageSize = 10;
         this.userActivityChart = null;
         this.tripStatsChart = null;
+        this.chartsInitialized = false;
+        this.enableCharts = true; // re-enable charts with safe lifecycle
         
         this.init();
+    }
+    resetCanvas(canvasId) {
+        const oldCanvas = document.getElementById(canvasId);
+        if (!oldCanvas) return null;
+        try {
+            const existing = (window.Chart && Chart.getChart) ? Chart.getChart(oldCanvas) : null;
+            if (existing) { existing.destroy(); }
+        } catch(_) {}
+        const parent = oldCanvas.parentNode;
+        const newCanvas = oldCanvas.cloneNode(true);
+        parent.replaceChild(newCanvas, oldCanvas);
+        return newCanvas;
     }
 
     init() {
         this.setupEventListeners();
         this.checkAuthentication();
         this.loadDashboardData();
+
+        // Clean up charts on unload/navigation
+        window.addEventListener('beforeunload', () => {
+            try { this.destroyCharts(); } catch (_) {}
+        });
     }
 
     setupEventListeners() {
@@ -199,7 +223,8 @@ class AdminDashboard {
                 await this.loadRatings();
                 break;
             case 'analytics':
-                await loadAnalytics();
+                // Analytics disabled - skip loading
+                console.log('Analytics section disabled');
                 break;
             case 'monitoring':
                 await loadSystemHealth();
@@ -238,22 +263,43 @@ class AdminDashboard {
         document.getElementById('total-users').textContent = stats.totalUsers || 0;
         document.getElementById('total-trips').textContent = stats.totalTrips || 0;
         document.getElementById('total-bookings').textContent = stats.totalBookings || 0;
-        document.getElementById('total-revenue').textContent = `$${stats.totalRevenue || 0}`;
+        // Display revenue in Tunisian Dinar (TND)
+        const revenue = Number(stats.totalRevenue || 0);
+        const formatted = isFinite(revenue) ? `${revenue.toFixed(2)} TND` : '0.00 TND';
+        document.getElementById('total-revenue').textContent = formatted;
     }
 
     createCharts() {
-        // Destroy existing charts if they exist
-        if (this.userActivityChart) {
-            this.userActivityChart.destroy();
+        if (!this.enableCharts) {
+            console.log('Charts disabled, skipping creation');
+            return;
         }
-        if (this.tripStatsChart) {
-            this.tripStatsChart.destroy();
+        if (this.chartsInitialized) {
+            console.log('Charts already initialized, skipping');
+            return;
         }
 
-        // User Activity Chart - Show empty state since we have no real data
-        const userCtx = document.getElementById('userActivityChart');
-        if (userCtx) {
-            this.userActivityChart = new Chart(userCtx, {
+        // Destroy ALL existing Chart.js instances first
+        try {
+            if (window.Chart && Chart.instances) {
+                Object.values(Chart.instances).forEach(ch => {
+                    try { ch.destroy(); } catch(_) {}
+                });
+            }
+        } catch(_) {}
+
+        // User Activity Chart - ensure previous instance is destroyed if present
+        let userCanvasEl = document.getElementById('userActivityChart');
+        try { 
+            const existing = Chart.getChart(userCanvasEl);
+            if (existing) {
+                console.log('Destroying existing userActivityChart');
+                existing.destroy();
+            }
+        } catch(_) {}
+        const userCanvas = this.resetCanvas('userActivityChart');
+        if (userCanvas) {
+            this.userActivityChart = new Chart(userCanvas, {
                 type: 'line',
                 data: {
                     labels: ['No Data'],
@@ -278,9 +324,11 @@ class AdminDashboard {
         }
 
         // Trip Statistics Chart - Show empty state since we have no real data
-        const tripCtx = document.getElementById('tripStatsChart');
-        if (tripCtx) {
-            this.tripStatsChart = new Chart(tripCtx, {
+        let tripCanvasEl = document.getElementById('tripStatsChart');
+        try { Chart.getChart(tripCanvasEl)?.destroy(); } catch(_) {}
+        const tripCanvas = this.resetCanvas('tripStatsChart');
+        if (tripCanvas) {
+            this.tripStatsChart = new Chart(tripCanvas, {
                 type: 'doughnut',
                 data: {
                     labels: ['No Data'],
@@ -302,6 +350,24 @@ class AdminDashboard {
                 }
             });
         }
+
+        this.chartsInitialized = true;
+    }
+
+    destroyCharts() {
+        try {
+            if (this.userActivityChart) {
+                this.userActivityChart.destroy();
+                this.userActivityChart = null;
+            }
+        } catch(_) {}
+        try {
+            if (this.tripStatsChart) {
+                this.tripStatsChart.destroy();
+                this.tripStatsChart = null;
+            }
+        } catch(_) {}
+        this.chartsInitialized = false;
     }
 
     async loadRecentActivity() {
@@ -784,8 +850,133 @@ class AdminDashboard {
     }
 
     async loadNotifications() {
-        // Implementation for notifications
         console.log('Loading notifications...');
+        await this.loadNotificationStats();
+    }
+
+    async loadNotificationStats() {
+        try {
+            // Load notification statistics
+            const stats = await this.apiCall('/admin/notifications/statistics');
+            
+            if (stats) {
+                document.getElementById('notif-total').textContent = stats.total || 0;
+                document.getElementById('notif-unread').textContent = stats.unread || 0;
+                document.getElementById('notif-today').textContent = stats.today || 0;
+            }
+            
+            // Load recent notifications (mock for now since endpoint doesn't exist yet)
+            this.displayRecentNotifications();
+        } catch (error) {
+            console.error('Error loading notification stats:', error);
+            this.showAlert('Failed to load notification statistics', 'danger');
+        }
+    }
+
+    async displayRecentNotifications() {
+        const container = document.getElementById('recent-notifications');
+        
+        try {
+            // Try to fetch real recent notifications from the API
+            const notifications = await this.apiCall('/admin/notifications/recent?limit=10');
+            
+            if (!notifications || notifications.length === 0) {
+                container.innerHTML = '<p class="text-muted text-center py-3">No recent notifications to display</p>';
+                return;
+            }
+
+            let html = '<div class="list-group">';
+            notifications.forEach(notif => {
+                const icon = this.getNotificationIcon(notif.type);
+                const color = this.getNotificationColor(notif.type);
+                const time = new Date(notif.createdAt).toLocaleString();
+                
+                html += `
+                    <div class="list-group-item">
+                        <div class="d-flex align-items-start">
+                            <div class="me-3">
+                                <i class="fas ${icon} fa-2x text-${color}"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h6 class="mb-1">${notif.title || 'Notification'}</h6>
+                                <p class="mb-1">${notif.message || ''}</p>
+                                <small class="text-muted">
+                                    <i class="fas fa-clock"></i> ${time}
+                                    <span class="badge bg-${color} ms-2">${notif.type}</span>
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            html += '</div>';
+            
+            container.innerHTML = html;
+        } catch (error) {
+            console.error('Error loading recent notifications:', error);
+            // Show nothing if API fails
+            container.innerHTML = '<p class="text-muted text-center py-3">Unable to load recent notifications</p>';
+        }
+    }
+
+    getNotificationIcon(type) {
+        const icons = {
+            'INFO': 'fa-info-circle',
+            'WARNING': 'fa-exclamation-triangle',
+            'ERROR': 'fa-times-circle',
+            'SUCCESS': 'fa-check-circle',
+            'MAINTENANCE': 'fa-tools',
+            'FEATURE_UPDATE': 'fa-star'
+        };
+        return icons[type] || 'fa-bell';
+    }
+
+    getNotificationColor(type) {
+        const colors = {
+            'INFO': 'info',
+            'WARNING': 'warning',
+            'ERROR': 'danger',
+            'SUCCESS': 'success',
+            'MAINTENANCE': 'secondary',
+            'FEATURE_UPDATE': 'primary'
+        };
+        return colors[type] || 'info';
+    }
+
+    async sendAnnouncement() {
+        const title = document.getElementById('announcement-title').value.trim();
+        const message = document.getElementById('announcement-message').value.trim();
+        const type = document.getElementById('announcement-type').value;
+        const priority = document.getElementById('announcement-priority').value;
+        const target = document.getElementById('announcement-target').value;
+        const requireAcknowledgment = document.getElementById('announcement-acknowledge').checked;
+
+        if (!title || !message) {
+            this.showAlert('Please fill in title and message', 'danger');
+            return;
+        }
+
+        try {
+            const announcementData = {
+                title: title,
+                message: message,
+                type: type,
+                priority: priority,
+                targetUserType: target,
+                requiresAcknowledgment: requireAcknowledgment
+            };
+
+            const response = await this.apiCall('/admin/notifications/announcement', 'POST', announcementData);
+
+            if (response) {
+                this.showAlert('Announcement sent successfully!', 'success');
+                document.getElementById('announcementForm').reset();
+                await this.loadNotificationStats();
+            }
+        } catch (error) {
+            console.error('Error sending announcement:', error);
+            this.showAlert('Failed to send announcement: ' + error.message, 'danger');
+        }
     }
 
     // User Management Functions
@@ -1242,8 +1433,9 @@ async function runCleanup(dryRun) {
 
 async function loadPendingTransfers() {
     try {
+        const token = localStorage.getItem('adminToken');
         const response = await fetch('http://localhost:8081/api/payments/admin/pending-transfers', {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('adminToken')}` }
+            headers: { 'Authorization': `Bearer ${token}` }
         });
         const transfers = await response.json();
         const tbody = document.getElementById('pending-transfers-table');
@@ -1292,14 +1484,17 @@ async function approveTransfer(paymentId) {
 
 async function loadSystemHealth() {
     try {
-        const response = await fetch('http://localhost:8081/api/admin/monitoring/health');
+        const token = localStorage.getItem('adminToken');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        
+        const response = await fetch('http://localhost:8081/api/admin/monitoring/health', { headers });
         const health = await response.json();
         
         document.getElementById('db-status').textContent = health.database?.status || 'Unknown';
         document.getElementById('stripe-status').textContent = health.stripe?.status || 'Unknown';
         document.getElementById('email-status').textContent = health.email?.status || 'Unknown';
         
-        const cleanupResp = await fetch('http://localhost:8081/api/admin/maintenance/cleanup/stats');
+        const cleanupResp = await fetch('http://localhost:8081/api/admin/maintenance/cleanup/stats', { headers });
         const cleanupStats = await cleanupResp.json();
         document.getElementById('cleanup-status').textContent = cleanupStats.lastRunTime ? 'OK' : 'Never';
     } catch (e) {
@@ -1309,10 +1504,13 @@ async function loadSystemHealth() {
 
 async function loadAnalytics() {
     try {
+        const token = localStorage.getItem('adminToken');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        
         const [revenue, routes, userStats] = await Promise.all([
-            fetch('http://localhost:8081/api/admin/analytics/revenue').then(r => r.json()),
-            fetch('http://localhost:8081/api/admin/analytics/popular-routes').then(r => r.json()),
-            fetch('http://localhost:8081/api/admin/analytics/user-stats').then(r => r.json())
+            fetch('http://localhost:8081/api/admin/analytics/revenue', { headers }).then(r => r.json()),
+            fetch('http://localhost:8081/api/admin/analytics/popular-routes', { headers }).then(r => r.json()),
+            fetch('http://localhost:8081/api/admin/analytics/user-stats', { headers }).then(r => r.json())
         ]);
         
         document.getElementById('analytics-revenue').textContent = (revenue.totalRevenue || 0).toFixed(2);

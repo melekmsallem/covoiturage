@@ -69,32 +69,34 @@ public class AnalyticsController {
         return ResponseEntity.ok(analytics);
     }
 
-    // Temporarily commented out to avoid mapping conflict
-    // @GetMapping("/popular-routes")
-    // public ResponseEntity<List<Map<String, Object>>> getPopularRoutes() {
-    //     try {
-    //         String sql = """
-    //             SELECT 
-    //                 dv.name as departure_city,
-    //                 av.name as arrival_city,
-    //                 COUNT(*) as trip_count,
-    //                 AVG(v.price_per_seat) as avg_price,
-    //                 SUM(v.max_seats - v.available_seats) as total_passengers
-    //             FROM voyages v
-    //             LEFT JOIN villes dv ON v.departure_ville_id = dv.id
-    //             LEFT JOIN villes av ON v.arrival_ville_id = av.id
-    //             WHERE v.status IN ('COMPLETED', 'ACTIVE', 'PLANNED')
-    //             GROUP BY dv.name, av.name
-    //             ORDER BY trip_count DESC
-    //             LIMIT 10
-    //             """;
-    //         
-    //         List<Map<String, Object>> routes = jdbcTemplate.queryForList(sql);
-    //         return ResponseEntity.ok(routes);
-    //     } catch (Exception e) {
-    //         return ResponseEntity.badRequest().body(null);
-    //     }
-    // }
+    @GetMapping("/popular-routes")
+    public ResponseEntity<List<Map<String, Object>>> getPopularRoutes() {
+        try {
+            String sql = """
+                SELECT 
+                    dv.name as departure_city,
+                    av.name as arrival_city,
+                    COUNT(*) as trip_count,
+                    AVG(v.price_per_seat) as avg_price,
+                    SUM(v.max_seats - v.available_seats) as total_passengers
+                FROM voyages v
+                LEFT JOIN villes dv ON v.departure_ville_id = dv.id
+                LEFT JOIN villes av ON v.arrival_ville_id = av.id
+                WHERE v.status IN ('COMPLETED', 'ACTIVE', 'PLANNED')
+                GROUP BY dv.name, av.name
+                ORDER BY trip_count DESC
+                LIMIT 10
+                """;
+            
+            List<Map<String, Object>> routes = jdbcTemplate.queryForList(sql);
+            return ResponseEntity.ok(routes);
+        } catch (Exception e) {
+            // Return empty list instead of null to avoid JSON parsing errors
+            System.err.println("Error fetching popular routes: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.ok(new java.util.ArrayList<>());
+        }
+    }
 
     @GetMapping("/user-stats")
     public ResponseEntity<Map<String, Object>> getUserStats() {

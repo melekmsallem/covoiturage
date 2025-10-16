@@ -4,6 +4,8 @@ import esprit.pfe.covoiturage_final.dto.*;
 import esprit.pfe.covoiturage_final.entities.*;
 import esprit.pfe.covoiturage_final.entities.Voyage.VoyageStatus;
 import esprit.pfe.covoiturage_final.repositories.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +18,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class AdminServiceImpl implements AdminService {
+    
+    private static final Logger logger = LoggerFactory.getLogger(AdminServiceImpl.class);
     
     @Autowired
     private UserRepository userRepository;
@@ -43,6 +47,9 @@ public class AdminServiceImpl implements AdminService {
     
     @Autowired
     private Point_GPSRepository pointGPSRepository;
+    
+    @Autowired(required = false)
+    private EmailService emailService;
     
     @Override
     public AdminDashboardStats getAdminDashboardStats() {
@@ -1328,13 +1335,78 @@ public class AdminServiceImpl implements AdminService {
     
     @Override
     public boolean sendSystemAnnouncement(SystemAnnouncementRequest request) {
-        // Mock implementation - create notification for all users
-        return true;
+        try {
+            List<User> targetUsers = new ArrayList<>();
+            
+            // Determine target users based on request
+            if (request.getTargetUserType() == null || "ALL".equals(request.getTargetUserType())) {
+                targetUsers = userRepository.findAll();
+            } else if ("DRIVER".equals(request.getTargetUserType()) || "CONDUCTEUR".equals(request.getTargetUserType())) {
+                targetUsers = userRepository.findByRole(UserRole.CONDUCTEUR);
+            } else if ("PASSENGER".equals(request.getTargetUserType()) || "PASSAGER".equals(request.getTargetUserType())) {
+                targetUsers = userRepository.findByRole(UserRole.PASSAGER);
+            }
+            
+            // Create notification for each target user
+            for (User user : targetUsers) {
+                Notification notification = new Notification();
+                notification.setUserId(user.getId());
+                notification.setTitle(request.getTitle());
+                notification.setMessage(request.getMessage());
+                notification.setType(Notification.NotificationType.SYSTEM_ANNOUNCEMENT);
+                notification.setStatus(Notification.NotificationStatus.UNREAD);
+                notification.setCreatedAt(LocalDateTime.now());
+                
+                notificationRepository.save(notification);
+                
+                // Optionally send email notification
+                try {
+                    emailService.sendSystemAnnouncementEmail(
+                        user.getEmail(),
+                        request.getTitle(),
+                        request.getMessage()
+                    );
+                    notification.setIsEmailSent(true);
+                    notificationRepository.save(notification);
+                } catch (Exception e) {
+                    logger.error("Failed to send email notification to user: " + user.getId(), e);
+                }
+            }
+            
+            logger.info("System announcement sent to {} users", targetUsers.size());
+            return true;
+        } catch (Exception e) {
+            logger.error("Error sending system announcement", e);
+            return false;
+        }
     }
     
     @Override
     public List<Map<String, Object>> getRecentNotifications(int limit) {
-        return new ArrayList<>(); // Mock implementation
+        try {
+            // Get recent notifications ordered by creation date
+            List<Notification> notifications = notificationRepository.findAll()
+                .stream()
+                .sorted((n1, n2) -> n2.getCreatedAt().compareTo(n1.getCreatedAt()))
+                .limit(limit)
+                .collect(Collectors.toList());
+            
+            return notifications.stream().map(notif -> {
+                Map<String, Object> notifMap = new HashMap<>();
+                notifMap.put("id", notif.getId());
+                notifMap.put("title", notif.getTitle());
+                notifMap.put("message", notif.getMessage());
+                notifMap.put("type", notif.getType().toString());
+                notifMap.put("status", notif.getStatus().toString());
+                notifMap.put("createdAt", notif.getCreatedAt());
+                notifMap.put("userId", notif.getUserId());
+                notifMap.put("isEmailSent", notif.getIsEmailSent());
+                return notifMap;
+            }).collect(Collectors.toList());
+        } catch (Exception e) {
+            logger.error("Error fetching recent notifications", e);
+            return new ArrayList<>();
+        }
     }
     
     // Additional mock implementations for remaining methods
@@ -1429,5 +1501,18 @@ public class AdminServiceImpl implements AdminService {
     @Override
     public List<Map<String, Object>> getSecurityAlerts() {
         return new ArrayList<>();
+    }
+    
+    @Override
+    public boolean deleteBooking(Long bookingId) {
+        try {
+            if (reservationRepository.existsById(bookingId)) {
+                reservationRepository.deleteById(bookingId);
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to delete booking: " + e.getMessage());
+        }
     }
 }

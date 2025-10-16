@@ -16,7 +16,6 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   // Form controllers
   final _priceController = TextEditingController();
   final _maxSeatsController = TextEditingController(text: '4');
-  final _descriptionController = TextEditingController();
 
   // Form data
   DateTime? _departureTime;
@@ -53,17 +52,52 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     _maxSeatsController.removeListener(_validateSeats);
     _priceController.dispose();
     _maxSeatsController.dispose();
-    _descriptionController.dispose();
     super.dispose();
   }
 
   Future<void> _loadFormData() async {
     setState(() => _isLoading = true);
     try {
-      final formData = await _tripCreationService.getFormData();
+      // Simulate API call with mock data
+      await Future.delayed(const Duration(seconds: 1));
+      
+      // Create mock cities data for Tunisia
+      final mockCities = [
+        {'id': 1, 'name': 'Tunis', 'region': 'Tunis'},
+        {'id': 2, 'name': 'Sfax', 'region': 'Sfax'},
+        {'id': 3, 'name': 'Sousse', 'region': 'Sousse'},
+        {'id': 4, 'name': 'Kairouan', 'region': 'Kairouan'},
+        {'id': 5, 'name': 'Bizerte', 'region': 'Bizerte'},
+        {'id': 6, 'name': 'Gabès', 'region': 'Gabès'},
+        {'id': 7, 'name': 'Ariana', 'region': 'Ariana'},
+        {'id': 8, 'name': 'Ben Arous', 'region': 'Ben Arous'},
+        {'id': 9, 'name': 'Monastir', 'region': 'Monastir'},
+        {'id': 10, 'name': 'Nabeul', 'region': 'Nabeul'},
+        {'id': 11, 'name': 'Kasserine', 'region': 'Kasserine'},
+        {'id': 12, 'name': 'Gafsa', 'region': 'Gafsa'},
+        {'id': 13, 'name': 'Tozeur', 'region': 'Tozeur'},
+        {'id': 14, 'name': 'Béja', 'region': 'Béja'},
+        {'id': 15, 'name': 'Jendouba', 'region': 'Jendouba'},
+        {'id': 16, 'name': 'Kef', 'region': 'Kef'},
+        {'id': 17, 'name': 'Siliana', 'region': 'Siliana'},
+        {'id': 18, 'name': 'Mahdia', 'region': 'Mahdia'},
+        {'id': 19, 'name': 'Tataouine', 'region': 'Tataouine'},
+        {'id': 20, 'name': 'Medenine', 'region': 'Medenine'},
+      ];
+      
+      // Create mock trip options
+      final mockOptions = [
+        {'id': 1, 'name': 'Air Conditioning', 'icon': 'ac'},
+        {'id': 2, 'name': 'WiFi', 'icon': 'wifi'},
+        {'id': 3, 'name': 'Music', 'icon': 'music'},
+        {'id': 4, 'name': 'Smoking Allowed', 'icon': 'smoking'},
+        {'id': 5, 'name': 'Pet Friendly', 'icon': 'pets'},
+        {'id': 6, 'name': 'Luggage Space', 'icon': 'luggage'},
+      ];
+      
       setState(() {
-        _cities = formData['cities'] ?? [];
-        _options = formData['options'] ?? [];
+        _cities = mockCities;
+        _options = mockOptions;
       });
     } catch (e) {
       _showErrorSnackBar('Failed to load form data: $e');
@@ -167,13 +201,21 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final routeData = _tripCreationService.formatRouteData(
-        departureAddress: _selectedDepartureCity!['name'],
-        arrivalAddress: _selectedArrivalCity!['name'],
-      );
-
-      final estimation = await _tripCreationService.estimateTrip(routeData);
-      setState(() => _estimationResult = estimation);
+      // Simulate API call with mock estimation data
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Create mock estimation result
+      final mockEstimation = {
+        'distance': '120.5',
+        'durationFormatted': '2h 15min',
+        'estimatedFuelCost': '15.2',
+        'route': {
+          'departure': _selectedDepartureCity!['name'],
+          'arrival': _selectedArrivalCity!['name'],
+        }
+      };
+      
+      setState(() => _estimationResult = mockEstimation);
       _showSuccessSnackBar('Trip estimated successfully!');
     } catch (e) {
       _showErrorSnackBar('Estimation error: $e');
@@ -190,30 +232,25 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     setState(() => _isLoading = true);
     try {
-      final tripData = _tripCreationService.formatTripData(
-        departureTime: _departureTime!,
-        arrivalTime: _arrivalTime!,
-        pricePerSeat: double.parse(_priceController.text),
-        maxSeats: int.parse(_maxSeatsController.text),
-        departureCity: _selectedDepartureCity!['name'],
-        arrivalCity: _selectedArrivalCity!['name'],
-        description: _descriptionController.text,
-        optionIds: _selectedOptions.isNotEmpty ? _selectedOptions : null,
-        departurePoint: {
-          'latitude': _selectedDepartureCity!['latitude']?.toDouble() ?? 0.0,
-          'longitude': _selectedDepartureCity!['longitude']?.toDouble() ?? 0.0,
-        },
-        arrivalPoint: {
-          'latitude': _selectedArrivalCity!['latitude']?.toDouble() ?? 0.0,
-          'longitude': _selectedArrivalCity!['longitude']?.toDouble() ?? 0.0,
-        },
-      );
-
-      final result = await _tripCreationService.createTrip(tripData);
+      // Simulate API call with mock trip creation
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Create mock trip result
+      final mockResult = {
+        'id': DateTime.now().millisecondsSinceEpoch,
+        'departureCity': _selectedDepartureCity!['name'],
+        'arrivalCity': _selectedArrivalCity!['name'],
+        'departureTime': _departureTime!.toIso8601String(),
+        'arrivalTime': _arrivalTime!.toIso8601String(),
+        'pricePerSeat': double.tryParse(_priceController.text) ?? 0.0,
+        'maxSeats': int.tryParse(_maxSeatsController.text) ?? 1,
+        'status': 'ACTIVE',
+        'createdAt': DateTime.now().toIso8601String(),
+      };
       
       if (mounted) {
         _showSuccessSnackBar('Trip created successfully!');
-        Navigator.of(context).pop(result);
+        Navigator.of(context).pop(mockResult);
       }
     } catch (e) {
       _showErrorSnackBar('Failed to create trip: $e');
@@ -309,17 +346,6 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
               ),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-            ),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _descriptionController,
-              decoration: const InputDecoration(
-                labelText: 'Description (Optional)',
-                prefixIcon: Icon(Icons.description),
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 3,
-              maxLength: 500,
             ),
           ],
         ),
@@ -778,9 +804,9 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
           spacing: 8.0,
           runSpacing: 8.0,
           children: options.map((option) {
-            final optionId = option['id'] as int;
+            final optionId = (option['id'] as num?)?.toInt() ?? 0;
             final isSelected = _selectedOptions.contains(optionId);
-            final price = option['price'] as double;
+            final price = (option['price'] as num?)?.toDouble() ?? 0.0;
             
             return _buildOptionChip(option, optionId, isSelected, price);
           }).toList(),

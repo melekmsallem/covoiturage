@@ -46,6 +46,9 @@ class _LoginScreenState extends State<LoginScreen> {
             backgroundColor: Colors.green,
           ),
         );
+        
+        // Navigate to home screen after successful login
+        Navigator.pushReplacementNamed(context, '/home');
       }
     } catch (e) {
       if (mounted) {
@@ -65,13 +68,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.blue, Colors.lightBlue],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              colorScheme.primary,
+              colorScheme.primaryContainer,
+            ],
           ),
         ),
         child: SafeArea(
@@ -81,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Card(
                 elevation: 8,
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(24),
                 ),
                 child: Padding(
                   padding: const EdgeInsets.all(32.0),
@@ -90,29 +98,34 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Logo/Icon
-                        const Icon(
-                          Icons.car_rental,
-                          size: 80,
-                          color: Colors.blue,
+                        // Logo/Icon with modern design
+                        Container(
+                          padding: const EdgeInsets.all(20),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primaryContainer.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Icon(
+                            Icons.car_rental,
+                            size: 60,
+                            color: colorScheme.primary,
+                          ),
                         ),
                         const SizedBox(height: 24),
                         
-                        // Title
-                        const Text(
+                        // Title with better typography
+                        Text(
                           'Welcome Back!',
-                          style: TextStyle(
-                            fontSize: 28,
+                          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                             fontWeight: FontWeight.bold,
-                            color: Colors.blue,
+                            color: colorScheme.onSurface,
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Sign in to your account',
-                          style: TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
+                          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: colorScheme.onSurface.withOpacity(0.7),
                           ),
                         ),
                         const SizedBox(height: 32),
@@ -122,12 +135,17 @@ class _LoginScreenState extends State<LoginScreen> {
                           controller: _usernameController,
                           decoration: InputDecoration(
                             labelText: 'Username or Email',
-                            prefixIcon: const Icon(Icons.person),
+                            hintText: 'Enter your username or email',
+                            prefixIcon: Icon(Icons.person, color: colorScheme.primary),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: colorScheme.primary, width: 2),
                             ),
                             filled: true,
-                            fillColor: Colors.grey[50],
+                            fillColor: colorScheme.surface,
                           ),
                           validator: (value) {
                             if (value == null || value.trim().isEmpty) {
@@ -144,10 +162,12 @@ class _LoginScreenState extends State<LoginScreen> {
                           obscureText: _obscurePassword,
                           decoration: InputDecoration(
                             labelText: 'Password',
-                            prefixIcon: const Icon(Icons.lock),
+                            hintText: 'Enter your password',
+                            prefixIcon: Icon(Icons.lock, color: colorScheme.primary),
                             suffixIcon: IconButton(
                               icon: Icon(
                                 _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                                color: colorScheme.primary,
                               ),
                               onPressed: () {
                                 setState(() {
@@ -156,10 +176,14 @@ class _LoginScreenState extends State<LoginScreen> {
                               },
                             ),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: colorScheme.primary, width: 2),
                             ),
                             filled: true,
-                            fillColor: Colors.grey[50],
+                            fillColor: colorScheme.surface,
                           ),
                           validator: (value) {
                             if (value == null || value.isEmpty) {
@@ -176,22 +200,30 @@ class _LoginScreenState extends State<LoginScreen> {
                         // Login Button
                         SizedBox(
                           width: double.infinity,
-                          height: 50,
+                          height: 56,
                           child: ElevatedButton(
                             onPressed: _isLoading ? null : _login,
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
+                              backgroundColor: colorScheme.primary,
+                              foregroundColor: colorScheme.onPrimary,
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(16),
                               ),
+                              elevation: 4,
                             ),
                             child: _isLoading
-                                ? const CircularProgressIndicator(color: Colors.white)
-                                : const Text(
+                                ? SizedBox(
+                                    width: 24,
+                                    height: 24,
+                                    child: CircularProgressIndicator(
+                                      color: colorScheme.onPrimary,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Text(
                                     'Sign In',
-                                    style: TextStyle(
-                                      fontSize: 18,
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                      color: colorScheme.onPrimary,
                                       fontWeight: FontWeight.bold,
                                     ),
                                   ),
@@ -203,21 +235,24 @@ class _LoginScreenState extends State<LoginScreen> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Flexible(
-                              child: Text(
-                                "Don't have an account? ",
-                                style: TextStyle(color: Colors.grey),
-                                overflow: TextOverflow.ellipsis,
+                            Text(
+                              "Don't have an account? ",
+                              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                color: colorScheme.onSurface.withOpacity(0.7),
                               ),
                             ),
                             TextButton(
                               onPressed: () {
                                 Navigator.pushNamed(context, '/signup');
                               },
-                              child: const Text(
+                              style: TextButton.styleFrom(
+                                foregroundColor: colorScheme.primary,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              ),
+                              child: Text(
                                 'Sign Up',
-                                style: TextStyle(
-                                  color: Colors.blue,
+                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                  color: colorScheme.primary,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),

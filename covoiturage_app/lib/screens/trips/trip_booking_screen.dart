@@ -150,8 +150,8 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
   @override
   Widget build(BuildContext context) {
     final trip = widget.trip;
-    final price = trip['pricePerSeat'] as double;
-    final availableSeats = trip['availableSeats'] as int;
+    final price = (trip['pricePerSeat'] as num?)?.toDouble() ?? 0.0;
+    final availableSeats = (trip['availableSeats'] as num?)?.toInt() ?? 0;
     final totalPrice = price * _selectedSeats;
 
     return Scaffold(

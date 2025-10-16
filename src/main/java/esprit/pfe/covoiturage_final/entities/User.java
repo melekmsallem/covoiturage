@@ -7,6 +7,8 @@ import lombok.NoArgsConstructor;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -32,6 +34,7 @@ public class User implements UserDetails {
     private String email;
     
     @Column(nullable = false)
+    @JsonIgnore
     private String password;
     
     @Column(name = "first_name")
@@ -104,5 +107,33 @@ public class User implements UserDetails {
     @Override
     public boolean isEnabled() {
         return isActive;
+    }
+    
+    // Computed status field for frontend display
+    @JsonProperty("status")
+    public String getStatus() {
+        if (suspensionEndDate != null && suspensionEndDate.isAfter(LocalDateTime.now())) {
+            return "SUSPENDED";
+        }
+        if (isActive == null || !isActive) {
+            return "INACTIVE";
+        }
+        if (isVerified == null || !isVerified) {
+            return "UNVERIFIED";
+        }
+        return "ACTIVE";
+    }
+    
+    // Computed full name for frontend display
+    @JsonProperty("fullName")
+    public String getFullName() {
+        if (firstName != null && lastName != null) {
+            return firstName + " " + lastName;
+        } else if (firstName != null) {
+            return firstName;
+        } else if (lastName != null) {
+            return lastName;
+        }
+        return username;
     }
 }

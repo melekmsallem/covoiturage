@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="covoiturage_app"
+        android:label="RideShare"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

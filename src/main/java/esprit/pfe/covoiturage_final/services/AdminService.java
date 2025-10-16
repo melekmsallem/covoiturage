@@ -53,6 +53,7 @@ public interface AdminService {
     List<Map<String, Object>> getTripTrends(int days);
     List<Map<String, Object>> getPopularDestinations(int limit);
     boolean deleteTrip(Long tripId);
+    boolean deleteBooking(Long bookingId);
     
     // City Management
     List<Map<String, Object>> getAllCities();

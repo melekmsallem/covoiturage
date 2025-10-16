@@ -130,18 +130,35 @@ class _SignupScreenState extends State<SignupScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Accept prefilled role/phone from previous steps
+    final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
+    final prefilledRole = args != null ? args['prefilledRole'] as String? : null;
+    final prefilledPhone = args != null ? args['prefilledPhone'] as String? : null;
+
+    if (prefilledRole != null && (prefilledRole == 'PASSAGER' || prefilledRole == 'CONDUCTEUR')) {
+      _selectedRole = prefilledRole;
+    }
+    if (prefilledPhone != null && prefilledPhone.isNotEmpty) {
+      _phoneController.text = prefilledPhone;
+    }
+    final colorScheme = Theme.of(context).colorScheme;
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Create Account'),
         backgroundColor: Colors.transparent,
         elevation: 0,
+        foregroundColor: colorScheme.onPrimary,
       ),
       body: Container(
-        decoration: const BoxDecoration(
+        decoration: BoxDecoration(
           gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [Colors.blue, Colors.lightBlue],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              colorScheme.primary,
+              colorScheme.primaryContainer,
+            ],
           ),
         ),
         child: SafeArea(
@@ -153,28 +170,33 @@ class _SignupScreenState extends State<SignupScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   // Header
-                  const Icon(
-                    Icons.car_rental,
-                    size: 80,
-                    color: Colors.white,
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: colorScheme.onPrimary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Icon(
+                      Icons.car_rental,
+                      size: 60,
+                      color: colorScheme.onPrimary,
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Join Covoiturage',
+                  const SizedBox(height: 24),
+                  Text(
+                    'Create Account',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 28,
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                       fontWeight: FontWeight.bold,
-                      color: Colors.white,
+                      color: colorScheme.onPrimary,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Create your account to start sharing rides',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.white70,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      color: colorScheme.onPrimary.withOpacity(0.9),
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -183,7 +205,7 @@ class _SignupScreenState extends State<SignupScreen> {
                   Card(
                     elevation: 8,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+                      borderRadius: BorderRadius.circular(24),
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(24.0),
@@ -194,12 +216,17 @@ class _SignupScreenState extends State<SignupScreen> {
                             value: _selectedRole,
                             decoration: InputDecoration(
                               labelText: 'Account Type',
-                              prefixIcon: const Icon(Icons.category),
+                              hintText: 'Select your role',
+                              prefixIcon: Icon(Icons.category, color: colorScheme.primary),
                               border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(12),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: BorderSide(color: colorScheme.primary, width: 2),
                               ),
                               filled: true,
-                              fillColor: Colors.grey[50],
+                              fillColor: colorScheme.surface,
                             ),
                             items: _roles.map((role) {
                               return DropdownMenuItem(
@@ -208,7 +235,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                            role == 'CONDUCTEUR' ? 'Driver' : 'Admin'),
                               );
                             }).toList(),
-                            onChanged: (value) {
+                            onChanged: prefilledRole != null ? null : (value) {
                               setState(() {
                                 _selectedRole = value!;
                               });
@@ -323,6 +350,7 @@ class _SignupScreenState extends State<SignupScreen> {
                               filled: true,
                               fillColor: Colors.grey[50],
                             ),
+                            readOnly: prefilledPhone != null,
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
                                 return 'Phone number is required';
@@ -480,22 +508,30 @@ class _SignupScreenState extends State<SignupScreen> {
                           // Sign Up Button
                           SizedBox(
                             width: double.infinity,
-                            height: 50,
+                            height: 56,
                             child: ElevatedButton(
                               onPressed: _isLoading ? null : _signup,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.blue,
-                                foregroundColor: Colors.white,
+                                backgroundColor: colorScheme.primary,
+                                foregroundColor: colorScheme.onPrimary,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
+                                elevation: 4,
                               ),
                               child: _isLoading
-                                  ? const CircularProgressIndicator(color: Colors.white)
-                                  : const Text(
+                                  ? SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: CircularProgressIndicator(
+                                        color: colorScheme.onPrimary,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : Text(
                                       'Create Account',
-                                      style: TextStyle(
-                                        fontSize: 18,
+                                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        color: colorScheme.onPrimary,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
