@@ -21,12 +21,12 @@ public interface AvisRepository extends JpaRepository<Avis, Long> {
     
     List<Avis> findByRatingGreaterThanEqual(Integer minRating);
     
-    @Query("SELECT AVG(a.rating) FROM Avis a WHERE a.userId = :userId AND a.isVisible = true")
+    @Query("SELECT AVG(a.rating) FROM Avis a WHERE a.userId = :userId AND a.isVisible = true AND (a.status = 'APPROVED' OR a.status IS NULL)")
     Double getAverageRatingByUserId(@Param("userId") Long userId);
     
-    @Query("SELECT a FROM Avis a WHERE a.userId = :userId AND a.isVisible = true")
+    @Query("SELECT a FROM Avis a WHERE a.userId = :userId AND a.isVisible = true AND (a.status = 'APPROVED' OR a.status IS NULL)")
     List<Avis> findVisibleByUserId(@Param("userId") Long userId);
     
-    @Query("SELECT a FROM Avis a WHERE a.voyageId = :voyageId AND a.isVisible = true")
+    @Query("SELECT a FROM Avis a WHERE a.voyageId = :voyageId AND a.isVisible = true AND (a.status = 'APPROVED' OR a.status IS NULL)")
     List<Avis> findVisibleByVoyageId(@Param("voyageId") Long voyageId);
 }

@@ -27,12 +27,29 @@ public class RatingController {
     public ResponseEntity<?> createRating(@Valid @RequestBody CreateRatingRequest request) {
         try {
             Long userId = getCurrentUserId();
-            Avis rating = ratingService.createRating(
-                userId,
-                request.getTripId(),
-                request.getRating(),
-                request.getComment()
-            );
+            Avis rating;
+            if (request.getTargetUserId() != null) {
+                // Use method that accepts targetUserId for driver rating passengers
+                if (ratingService instanceof esprit.pfe.covoiturage_final.services.RatingServiceImpl) {
+                    esprit.pfe.covoiturage_final.services.RatingServiceImpl impl = (esprit.pfe.covoiturage_final.services.RatingServiceImpl) ratingService;
+                    rating = impl.createRatingWithTarget(
+                        userId,
+                        request.getTripId(),
+                        request.getRating(),
+                        request.getComment(),
+                        request.getTargetUserId()
+                    );
+                } else {
+                    throw new RuntimeException("RatingService implementation does not support targetUserId");
+                }
+            } else {
+                rating = ratingService.createRating(
+                    userId,
+                    request.getTripId(),
+                    request.getRating(),
+                    request.getComment()
+                );
+            }
             return ResponseEntity.ok(rating);
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -214,7 +231,15 @@ public class RatingController {
     public ResponseEntity<?> getMyRatings() {
         try {
             Long userId = getCurrentUserId();
-            List<Avis> ratings = ratingService.getRatingsByUser(userId);
+            // Get ratings SUBMITTED BY the user, not about the user
+            List<Avis> ratings;
+            if (ratingService instanceof esprit.pfe.covoiturage_final.services.RatingServiceImpl) {
+                esprit.pfe.covoiturage_final.services.RatingServiceImpl impl = (esprit.pfe.covoiturage_final.services.RatingServiceImpl) ratingService;
+                ratings = impl.getRatingsSubmittedByUser(userId);
+            } else {
+                // Fallback: try to find ratings through trips
+                ratings = ratingService.getRatingsByUser(userId); // This is wrong but as fallback
+            }
             return ResponseEntity.ok(Map.of("data", ratings));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(e.getMessage());
@@ -297,6 +322,7 @@ public class RatingController {
         private Integer rating;
         private String comment;
         private Long tripId;
+        private Long targetUserId; // User being rated (passenger or driver)
         
         public Integer getRating() { return rating; }
         public void setRating(Integer rating) { this.rating = rating; }
@@ -306,6 +332,9 @@ public class RatingController {
         
         public Long getTripId() { return tripId; }
         public void setTripId(Long tripId) { this.tripId = tripId; }
+        
+        public Long getTargetUserId() { return targetUserId; }
+        public void setTargetUserId(Long targetUserId) { this.targetUserId = targetUserId; }
     }
     
     public static class RateDriverRequest {

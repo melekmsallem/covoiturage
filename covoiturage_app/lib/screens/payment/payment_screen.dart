@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import '../../services/payment_service.dart';
 import '../../providers/auth_provider.dart';
 import 'package:provider/provider.dart';
@@ -109,30 +110,58 @@ class _PaymentScreenState extends State<PaymentScreen> {
         }
 
         final uri = Uri.parse(checkoutUrl);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } else {
-          _showErrorDialog('Cannot open browser for payment.');
+        print('DEBUG: Attempting to launch Stripe URL: $checkoutUrl');
+        
+        bool launchSuccess = false;
+        
+        // Try to launch the URL directly without checking canLaunchUrl first
+        try {
+          if (kIsWeb) {
+            // For web, try platformDefault first (opens in same tab)
+            try {
+              await launchUrl(uri, mode: LaunchMode.platformDefault);
+              launchSuccess = true;
+              print('DEBUG: Successfully launched Stripe URL on web (platformDefault)');
+            } catch (e) {
+              print('DEBUG: PlatformDefault failed on web, trying externalApplication: $e');
+              try {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+                launchSuccess = true;
+                print('DEBUG: Successfully launched Stripe URL on web (externalApplication)');
+              } catch (e2) {
+                print('DEBUG: Both launch modes failed on web: $e2');
+              }
+            }
+          } else {
+            // For mobile, try externalApplication first (opens in browser app)
+            try {
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+              launchSuccess = true;
+              print('DEBUG: Successfully launched Stripe URL on mobile (externalApplication)');
+            } catch (e) {
+              print('DEBUG: ExternalApplication failed on mobile, trying platformDefault: $e');
+              try {
+                await launchUrl(uri, mode: LaunchMode.platformDefault);
+                launchSuccess = true;
+                print('DEBUG: Successfully launched Stripe URL on mobile (platformDefault)');
+              } catch (e2) {
+                print('DEBUG: Both launch modes failed on mobile: $e2');
+              }
+            }
+          }
+        } catch (e) {
+          print('DEBUG: URL launch failed: $e');
+        }
+        
+        // If all attempts failed, show the URL dialog as fallback
+        if (!launchSuccess) {
+          print('DEBUG: All launch attempts failed, showing URL dialog');
+          _showStripeUrlDialog(checkoutUrl);
           return;
         }
 
-        // After user returns, re-check payment status
-        await Future.delayed(const Duration(seconds: 2));
-        final refreshed = await PaymentService.getPaymentForReservation(widget.reservationId);
-        if (refreshed != null && refreshed.isCompleted) {
-          _showSuccessDialog();
-        } else {
-          // Optionally keep polling a couple of times
-          for (int i = 0; i < 3; i++) {
-            await Future.delayed(const Duration(seconds: 2));
-            final polled = await PaymentService.getPaymentForReservation(widget.reservationId);
-            if (polled != null && polled.isCompleted) {
-              _showSuccessDialog();
-              return;
-            }
-          }
-          _showErrorDialog('Payment not confirmed yet. If charged, it will update shortly.');
-        }
+        // Show dialog to check payment status after user returns
+        _showPaymentCheckDialog();
         return;
       }
 
@@ -143,7 +172,7 @@ class _PaymentScreenState extends State<PaymentScreen> {
       );
 
       if (processedPayment.isCompleted) {
-        _showSuccessDialog();
+        Navigator.of(context).pop(true); // Return success
       } else {
         _showErrorDialog('Payment failed. Please try again.');
       }
@@ -276,6 +305,179 @@ class _PaymentScreenState extends State<PaymentScreen> {
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
             child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showStripeUrlDialog(String checkoutUrl) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.payment, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Complete Payment'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Please complete your payment by clicking the link below or copying it to your browser:',
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: SelectableText(
+                checkoutUrl,
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'After completing payment, return to this app and the status will update automatically.',
+              style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              // Try multiple launch modes to ensure it opens
+              try {
+                await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.platformDefault);
+              } catch (e) {
+                try {
+                  await launchUrl(Uri.parse(checkoutUrl), mode: LaunchMode.externalApplication);
+                } catch (e2) {
+                  print('DEBUG: Failed to open URL: $e2');
+                }
+              }
+            },
+            icon: const Icon(Icons.open_in_browser),
+            label: const Text('Open in Browser'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPaymentCheckDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.payment, color: Colors.blue),
+            SizedBox(width: 8),
+            Text('Complete Payment'),
+          ],
+        ),
+        content: const Text(
+          'Please complete your payment in the browser window that opened.\n\n'
+          'After completing payment, click "Check Payment Status" below to verify your payment.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.of(context).pop();
+              await _checkPaymentAfterStripe();
+            },
+            child: const Text('Check Payment Status'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _checkPaymentAfterStripe() async {
+    setState(() {
+      _isProcessing = true;
+    });
+
+    try {
+      // Check payment status
+      final refreshed = await PaymentService.getPaymentForReservation(widget.reservationId);
+      if (refreshed != null && refreshed.isCompleted) {
+        _showSuccessDialog();
+      } else {
+        // Try a few more times with delays
+        for (int i = 0; i < 3; i++) {
+          await Future.delayed(const Duration(seconds: 3));
+          final polled = await PaymentService.getPaymentForReservation(widget.reservationId);
+          if (polled != null && polled.isCompleted) {
+            _showSuccessDialog();
+            return;
+          }
+        }
+        
+        // Show manual check dialog
+        _showManualCheckDialog();
+      }
+    } catch (e) {
+      print('DEBUG: Error checking payment status: $e');
+      _showErrorDialog('Failed to check payment status: $e');
+    } finally {
+      setState(() {
+        _isProcessing = false;
+      });
+    }
+  }
+
+  void _showManualCheckDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.info, color: Colors.orange),
+            SizedBox(width: 8),
+            Text('Payment Status'),
+          ],
+        ),
+        content: const Text(
+          'Payment not confirmed yet. This can happen if:\n\n'
+          '• Payment is still being processed\n'
+          '• You haven\'t completed the payment yet\n'
+          '• There was an issue with the payment\n\n'
+          'If you completed the payment, it should update shortly. '
+          'You can also refresh this screen to check again.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _checkExistingPayment(); // Refresh the payment status
+            },
+            child: const Text('Refresh Status'),
           ),
         ],
       ),

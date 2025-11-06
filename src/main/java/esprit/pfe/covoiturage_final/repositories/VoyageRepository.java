@@ -29,8 +29,13 @@ public interface VoyageRepository extends JpaRepository<Voyage, Long> {
     @Query("SELECT v FROM Voyage v WHERE v.departureTime BETWEEN :startDate AND :endDate")
     List<Voyage> findByDepartureTimeBetween(@Param("startDate") LocalDateTime startDate, 
                                            
-    
+                                           
     @Param("endDate") LocalDateTime endDate);
+    
+    @Query("SELECT v FROM Voyage v WHERE v.departureTime BETWEEN :startDate AND :endDate AND v.status = :status")
+    List<Voyage> findByDepartureTimeBetweenAndStatus(@Param("startDate") LocalDateTime startDate, 
+                                                      @Param("endDate") LocalDateTime endDate,
+                                                      @Param("status") Voyage.VoyageStatus status);
     
     List<Voyage> findByConducteurIdAndStatus(Long conducteurId, Voyage.VoyageStatus status);
     
@@ -40,6 +45,9 @@ public interface VoyageRepository extends JpaRepository<Voyage, Long> {
     // Admin dashboard methods
     Long countByStatus(Voyage.VoyageStatus status);
     Long countByCreatedAtAfter(LocalDateTime date);
+    
+    // Count completed trips for a specific driver
+    Long countByConducteurIdAndStatus(Long conducteurId, Voyage.VoyageStatus status);
 
     @Modifying
     void deleteByIdIn(List<Long> voyageIds);

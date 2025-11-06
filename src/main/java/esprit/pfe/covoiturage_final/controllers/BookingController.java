@@ -140,6 +140,32 @@ public class BookingController {
         }
     }
     
+    @PostMapping("/{bookingId}/pickup-point")
+    public ResponseEntity<?> setPickupPoint(@PathVariable Long bookingId, @RequestBody Map<String, Object> request) {
+        try {
+            Long passengerId = getCurrentUserId();
+            String address = (String) request.get("address");
+            Double latitude = ((Number) request.get("latitude")).doubleValue();
+            Double longitude = ((Number) request.get("longitude")).doubleValue();
+            
+            BookingResponse response = tripService.setPassengerPickupPoint(bookingId, passengerId, address, latitude, longitude);
+            return ResponseEntity.ok(response);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+    
+    @GetMapping("/trip/{tripId}/pickup-points")
+    public ResponseEntity<?> getTripPickupPoints(@PathVariable Long tripId) {
+        try {
+            Long userId = getCurrentUserId();
+            List<Map<String, Object>> pickupPoints = tripService.getTripPickupPoints(tripId, userId);
+            return ResponseEntity.ok(pickupPoints);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
+    
     private Long getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication != null && authentication.getPrincipal() instanceof esprit.pfe.covoiturage_final.entities.User) {

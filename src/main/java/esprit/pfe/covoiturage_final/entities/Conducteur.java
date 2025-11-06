@@ -1,6 +1,7 @@
 package esprit.pfe.covoiturage_final.entities;
 
 import jakarta.persistence.*;
+import jakarta.validation.constraints.Pattern;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -25,6 +26,7 @@ public class Conducteur extends User {
     private String vehicleColor;
     
     @Column(name = "vehicle_plate")
+    @Pattern(regexp = "^\\d{3}TU\\d{4}$", message = "License plate must follow Tunisian format: 3 numbers + TU + 4 numbers (e.g., 123TU4567)")
     private String vehiclePlate;
     
     @Column(name = "max_passengers")
@@ -41,6 +43,15 @@ public class Conducteur extends User {
     
     @Column(name = "is_available")
     private Boolean isAvailable = true;
+    
+    @Column(name = "license_image_path")
+    private String licenseImagePath;
+    
+    @Column(name = "license_verified")
+    private Boolean licenseVerified = false;
+    
+    @Column(name = "license_verification_date")
+    private java.time.LocalDateTime licenseVerificationDate;
     
     // Relationships will be managed by Voyage entity
     

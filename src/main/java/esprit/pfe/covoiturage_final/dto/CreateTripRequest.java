@@ -37,6 +37,12 @@ public class CreateTripRequest {
     private GPSPointRequest departurePoint;
     private GPSPointRequest arrivalPoint;
     
+    // Pickup mode fields
+    private String pickupMode; // DESIGNATED_POINT or INDIVIDUAL_PICKUP
+    private List<GPSPointRequest> pickupPoints;
+    private Boolean allowLocationSharing;
+    private Boolean flexiblePickupTimes;
+    
     // Constructors
     public CreateTripRequest() {}
     
@@ -135,5 +141,37 @@ public class CreateTripRequest {
     
     public void setArrivalPoint(GPSPointRequest arrivalPoint) {
         this.arrivalPoint = arrivalPoint;
+    }
+    
+    public String getPickupMode() {
+        return pickupMode;
+    }
+    
+    public void setPickupMode(String pickupMode) {
+        this.pickupMode = pickupMode;
+    }
+    
+    public List<GPSPointRequest> getPickupPoints() {
+        return pickupPoints;
+    }
+    
+    public void setPickupPoints(List<GPSPointRequest> pickupPoints) {
+        this.pickupPoints = pickupPoints;
+    }
+    
+    public Boolean getAllowLocationSharing() {
+        return allowLocationSharing;
+    }
+    
+    public void setAllowLocationSharing(Boolean allowLocationSharing) {
+        this.allowLocationSharing = allowLocationSharing;
+    }
+    
+    public Boolean getFlexiblePickupTimes() {
+        return flexiblePickupTimes;
+    }
+    
+    public void setFlexiblePickupTimes(Boolean flexiblePickupTimes) {
+        this.flexiblePickupTimes = flexiblePickupTimes;
     }
 }

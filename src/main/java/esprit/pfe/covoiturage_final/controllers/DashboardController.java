@@ -204,74 +204,131 @@ public class DashboardController {
                 stats.put("totalEarnings", Math.round(totalEarnings * 100.0) / 100.0);
                 stats.put("role", "ADMIN");
             } else if (currentUser.getRole() == esprit.pfe.covoiturage_final.entities.UserRole.PASSAGER) {
-                // Passenger-scoped view: count only CONFIRMED bookings whose trip departs in the future
-                var allMyBookings = reservationRepository.findByPassagerId(userId);
-                var now = java.time.LocalDateTime.now();
-                long upcomingConfirmed = allMyBookings.stream()
-                    .filter(b -> b.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.CONFIRMED)
-                    .filter(b -> {
-                        if (b.getVoyageId() == null) return false;
-                        var tripOpt = voyageRepository.findById(b.getVoyageId());
-                        return tripOpt.isPresent()
-                            && tripOpt.get().getStatus() == esprit.pfe.covoiturage_final.entities.Voyage.VoyageStatus.PLANNED
-                            && tripOpt.get().getDepartureTime() != null
-                            && !tripOpt.get().getDepartureTime().isBefore(now);
-                    })
-                    .map(b -> b.getVoyageId())
-                    .distinct()
-                    .count();
-                double myEarnings = 0.0; // passengers don’t earn; keep 0
-                stats.put("scope", "PASSAGER");
-                stats.put("totalTrips", upcomingConfirmed);
-                stats.put("totalBookings", upcomingConfirmed);
-                stats.put("totalEarnings", myEarnings);
-                stats.put("role", "PASSAGER");
-            } else if (currentUser.getRole() == esprit.pfe.covoiturage_final.entities.UserRole.CONDUCTEUR) {
-                // Driver-scoped view: count UPCOMING trips and related bookings/earnings
-                var allMyTrips = voyageRepository.findByConducteurId(userId);
-                var now = java.time.LocalDateTime.now();
-                
-                // Filter for upcoming trips (departure time in the future)
-                var myUpcomingTrips = allMyTrips.stream()
-                    .filter(trip -> {
-                        var dt = trip.getDepartureTime();
-                        if (dt == null) {
-                            // Treat PLANNED trips with no time as upcoming to avoid missing valid trips
-                            return trip.getStatus() == esprit.pfe.covoiturage_final.entities.Voyage.VoyageStatus.PLANNED;
+                // If this account has published driver trips, treat as driver scope for overview
+                var myDriverTrips = voyageRepository.findByConducteurId(userId);
+                stats.put("debug_driverTripsCount", myDriverTrips != null ? myDriverTrips.size() : 0);
+                if (myDriverTrips != null && !myDriverTrips.isEmpty()) {
+                    // Use driver stats
+                    try {
+                        DashboardStats dashboardStats = dashboardService.getDashboardStats(userId);
+                        stats.put("scope", "CONDUCTEUR");
+                        stats.put("totalTrips", dashboardStats.getTotalTrips());
+                        stats.put("completedTrips", dashboardStats.getCompletedTrips());
+                        stats.put("upcomingTrips", dashboardStats.getUpcomingTrips());
+                        stats.put("totalEarnings", dashboardStats.getTotalEarnings() != null ? 
+                            Math.round(dashboardStats.getTotalEarnings().doubleValue() * 100.0) / 100.0 : 0.0);
+                        stats.put("averageRating", dashboardStats.getAverageRating());
+                        stats.put("totalPassengers", dashboardStats.getTotalPassengers());
+                        long totalBookings = 0L;
+                        for (var trip : myDriverTrips) {
+                            var bookings = reservationRepository.findByVoyageId(trip.getId());
+                            totalBookings += bookings.stream()
+                                .filter(b -> b.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.CONFIRMED ||
+                                             b.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.COMPLETED)
+                                .count();
                         }
-                        return !dt.isBefore(now);
-                    })
-                    .toList();
-
-                long myUpcomingBookings = 0L;
-                double myEarnings = 0.0;
-                for (var trip : myUpcomingTrips) {
-                    var bookings = reservationRepository.findByVoyageId(trip.getId());
-                    // Count only confirmed bookings for stats
-                    myUpcomingBookings += bookings.stream()
-                        .filter(b -> b.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.CONFIRMED)
-                        .count();
-                    // Earnings from completed payments tied to these bookings
-                    for (var b : bookings) {
-                        var payments = paiementRepository.findByReservationId(b.getId());
-                        for (var p : payments) {
-                            if (p.getStatus() == Paiement.PaymentStatus.COMPLETED) {
-                                myEarnings += p.getAmount();
-                            }
-                        }
+                        stats.put("totalBookings", totalBookings);
+                        stats.put("role", "CONDUCTEUR");
+                        stats.put("debug_driverTripsFound", myDriverTrips.size());
+                    } catch (Exception e) {
+                        // Log error but still try to set driver stats with what we have
+                        stats.put("debug_error", e.getMessage());
+                        stats.put("debug_exception", e.getClass().getSimpleName());
+                        // Even if service fails, use the trips we found
+                        stats.put("scope", "CONDUCTEUR");
+                        stats.put("totalTrips", (long) myDriverTrips.size());
+                        stats.put("completedTrips", myDriverTrips.stream()
+                            .filter(t -> t.getStatus() == esprit.pfe.covoiturage_final.entities.Voyage.VoyageStatus.COMPLETED)
+                            .count());
+                        stats.put("upcomingTrips", 0L);
+                        stats.put("totalEarnings", 0.0);
+                        stats.put("role", "CONDUCTEUR");
                     }
                 }
-                
-                // Add debug info
-                stats.put("debug_totalTripsFound", allMyTrips.size());
-                stats.put("debug_upcomingTripsCount", myUpcomingTrips.size());
-                stats.put("debug_currentTime", now.toString());
-                stats.put("role", "CONDUCTEUR");
-                
-                stats.put("scope", "CONDUCTEUR");
-                stats.put("totalTrips", (long) myUpcomingTrips.size());
-                stats.put("totalBookings", myUpcomingBookings);
-                stats.put("totalEarnings", Math.round(myEarnings * 100.0) / 100.0);
+
+                if (!stats.containsKey("role")) {
+                    // Passenger-scoped view using service (includes averageRating, completed/upcoming counts)
+                    try {
+                        DashboardStats dashboardStats = dashboardService.getDashboardStats(userId);
+                        stats.put("scope", "PASSAGER");
+                        stats.put("totalTrips", dashboardStats.getTotalTrips());
+                        stats.put("completedTrips", dashboardStats.getCompletedTrips());
+                        stats.put("upcomingTrips", dashboardStats.getUpcomingTrips());
+                        stats.put("averageRating", dashboardStats.getAverageRating());
+                        stats.put("totalEarnings", 0.0); // passengers don’t earn
+                        stats.put("role", "PASSAGER");
+
+                        // Derive totalBookings from confirmed reservations
+                        var allMyBookings = reservationRepository.findByPassagerId(userId);
+                        long totalBookings = allMyBookings.stream()
+                            .filter(b -> b.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.CONFIRMED
+                                         || b.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.COMPLETED)
+                            .count();
+                        stats.put("totalBookings", totalBookings);
+                    } catch (Exception e) {
+                        // Fallback to minimal passenger view if service fails
+                        var allMyBookings = reservationRepository.findByPassagerId(userId);
+                        var now = java.time.LocalDateTime.now();
+                        long upcomingConfirmed = allMyBookings.stream()
+                            .filter(b -> b.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.CONFIRMED)
+                            .filter(b -> {
+                                if (b.getVoyageId() == null) return false;
+                                var tripOpt = voyageRepository.findById(b.getVoyageId());
+                                return tripOpt.isPresent()
+                                    && tripOpt.get().getStatus() == esprit.pfe.covoiturage_final.entities.Voyage.VoyageStatus.PLANNED
+                                    && tripOpt.get().getDepartureTime() != null
+                                    && !tripOpt.get().getDepartureTime().isBefore(now);
+                            })
+                            .map(b -> b.getVoyageId())
+                            .distinct()
+                            .count();
+                        stats.put("scope", "PASSAGER");
+                        stats.put("totalTrips", upcomingConfirmed);
+                        stats.put("totalBookings", upcomingConfirmed);
+                        stats.put("totalEarnings", 0.0);
+                        stats.put("averageRating", 0.0);
+                        stats.put("role", "PASSAGER");
+                    }
+                }
+            } else if (currentUser.getRole() == esprit.pfe.covoiturage_final.entities.UserRole.CONDUCTEUR) {
+                // Driver-scoped view: use DashboardService to get accurate stats including completed trips
+                try {
+                    DashboardStats dashboardStats = dashboardService.getDashboardStats(userId);
+                    
+                    stats.put("scope", "CONDUCTEUR");
+                    stats.put("totalTrips", dashboardStats.getTotalTrips());
+                    stats.put("completedTrips", dashboardStats.getCompletedTrips());
+                    stats.put("upcomingTrips", dashboardStats.getUpcomingTrips());
+                    stats.put("totalEarnings", dashboardStats.getTotalEarnings() != null ? 
+                        Math.round(dashboardStats.getTotalEarnings().doubleValue() * 100.0) / 100.0 : 0.0);
+                    stats.put("averageRating", dashboardStats.getAverageRating());
+                    stats.put("totalPassengers", dashboardStats.getTotalPassengers());
+                    
+                    // Calculate total bookings from all trips
+                    var allMyTrips = voyageRepository.findByConducteurId(userId);
+                    long totalBookings = 0L;
+                    for (var trip : allMyTrips) {
+                        var bookings = reservationRepository.findByVoyageId(trip.getId());
+                        totalBookings += bookings.stream()
+                            .filter(b -> b.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.CONFIRMED ||
+                                        b.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.COMPLETED)
+                            .count();
+                    }
+                    stats.put("totalBookings", totalBookings);
+                    stats.put("role", "CONDUCTEUR");
+                    
+                    // Debug info
+                    stats.put("debug_totalTripsFound", allMyTrips.size());
+                } catch (Exception e) {
+                    // Fallback to old logic if service fails
+                    var allMyTrips = voyageRepository.findByConducteurId(userId);
+                    stats.put("totalTrips", (long) allMyTrips.size());
+                    stats.put("totalBookings", 0L);
+                    stats.put("totalEarnings", 0.0);
+                    stats.put("role", "CONDUCTEUR");
+                    stats.put("scope", "CONDUCTEUR");
+                    stats.put("debug_totalTripsFound", allMyTrips.size());
+                }
             }
 
             // Populate upcoming trips for the current user (driver or passenger)

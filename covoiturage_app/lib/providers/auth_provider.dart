@@ -26,6 +26,7 @@ class AuthProvider extends ChangeNotifier {
         'email': prefs.getString('email'),
         'firstName': prefs.getString('firstName'),
         'lastName': prefs.getString('lastName'),
+        'phoneNumber': prefs.getString('phoneNumber'),
         'role': prefs.getString('role'),
       };
     }
@@ -33,6 +34,8 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> login(String token, Map<String, dynamic> user) async {
+    print('DEBUG: AuthProvider login called for user ID: ${user['id']}');
+    print('DEBUG: Token received: ${token.substring(0, 20)}...');
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', token);
     await prefs.setInt('user_id', user['id']);
@@ -40,6 +43,9 @@ class AuthProvider extends ChangeNotifier {
     await prefs.setString('email', user['email']);
     await prefs.setString('firstName', user['firstName']);
     await prefs.setString('lastName', user['lastName']);
+    if (user['phoneNumber'] != null) {
+      await prefs.setString('phoneNumber', user['phoneNumber']);
+    }
     await prefs.setString('role', user['role']);
 
     _token = token;
@@ -47,10 +53,15 @@ class AuthProvider extends ChangeNotifier {
     ApiService.setToken(token);
     _user = user;
     _isAuthenticated = true;
+    print('DEBUG: AuthProvider login completed for user ID: ${user['id']}');
+    print('DEBUG: Token set in memory: ${token.substring(0, 20)}...');
     notifyListeners();
   }
 
   Future<void> logout() async {
+    print('DEBUG: AuthProvider logout called');
+    print('DEBUG: Current token before logout: ${_token?.substring(0, 20)}...');
+    print('DEBUG: Current user before logout: ${_user?['id']}');
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
 
@@ -58,6 +69,12 @@ class AuthProvider extends ChangeNotifier {
     ApiService.setToken(null);
     _user = null;
     _isAuthenticated = false;
+    print('DEBUG: AuthProvider logout completed - token cleared');
+    notifyListeners();
+  }
+
+  void updateUserData(Map<String, dynamic> updatedUser) {
+    _user = updatedUser;
     notifyListeners();
   }
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:web_socket_channel/status.dart' as status;
+import 'api_service.dart';
 
 class WebSocketService {
   static WebSocketService? _instance;
@@ -33,9 +34,16 @@ class WebSocketService {
     if (_isConnected) return;
 
     try {
+      // Get the resolved base URL (works for emulator and real device)
+      final baseUrl = kIsWeb ? 'http://localhost:8081' : await ApiService.getResolvedBaseUrl();
+      // Convert http to ws
+      final wsUrl = baseUrl.replaceFirst('http://', 'ws://').replaceFirst('/api', '');
+      
+      print('Connecting to WebSocket: $wsUrl/ws');
+      
       // Connect to the WebSocket endpoint
       _channel = WebSocketChannel.connect(
-        Uri.parse(kIsWeb ? 'ws://localhost:8081/ws' : 'ws://192.168.1.14:8081/ws'),
+        Uri.parse('$wsUrl/ws'),
       );
 
       // Listen to messages

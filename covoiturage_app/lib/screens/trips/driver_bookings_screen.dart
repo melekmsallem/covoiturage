@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/trip_service.dart';
+import '../../widgets/report_dialog.dart';
+import '../chat/chat_screen.dart';
+import '../chat/group_chat_screen.dart';
 
 class DriverBookingsScreen extends StatefulWidget {
   const DriverBookingsScreen({super.key});
@@ -66,7 +71,12 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
   Future<void> _acceptBooking(int bookingId) async {
     try {
       await _tripService.confirmBooking(bookingId);
-      _showSuccessSnackBar('Booking accepted successfully');
+      _showBeautifulSuccessDialog(
+        title: 'Booking Accepted! 🎉',
+        message: 'You have successfully accepted this booking. The passenger has been notified.',
+        icon: Icons.check_circle,
+        color: Colors.green,
+      );
       _loadDriverData(); // Refresh the data
     } catch (e) {
       _showErrorSnackBar('Failed to accept booking: $e');
@@ -76,7 +86,12 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
   Future<void> _rejectBooking(int bookingId) async {
     try {
       await _tripService.cancelBooking(bookingId);
-      _showSuccessSnackBar('Booking rejected successfully');
+      _showBeautifulSuccessDialog(
+        title: 'Booking Rejected',
+        message: 'You have rejected this booking. The passenger has been notified and their coins have been refunded.',
+        icon: Icons.cancel,
+        color: Colors.orange,
+      );
       _loadDriverData(); // Refresh the data
     } catch (e) {
       _showErrorSnackBar('Failed to reject booking: $e');
@@ -107,6 +122,31 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
     );
   }
 
+  void _showReportDialog(Map<String, dynamic> booking, Map<String, dynamic>? passenger, Map<String, dynamic> trip) {
+    if (passenger == null) {
+      _showErrorSnackBar('Passenger information not available');
+      return;
+    }
+    
+    final bookingId = (booking['id'] as num?)?.toInt();
+    final tripId = (trip['id'] as num?)?.toInt();
+    
+    showDialog(
+      context: context,
+      builder: (context) => ReportDialog(
+        reportedUser: passenger,
+        bookingId: bookingId,
+        tripId: tripId,
+        userRole: 'passenger',
+      ),
+    ).then((success) {
+      if (success == true) {
+        // Refresh bookings if report was successful
+        _loadDriverData();
+      }
+    });
+  }
+
   void _showRejectDialog(int bookingId, String passengerName) {
     showDialog(
       context: context,
@@ -131,15 +171,85 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
     );
   }
 
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.green),
-    );
-  }
 
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  void _showBeautifulSuccessDialog({
+    required String title,
+    required String message,
+    required IconData icon,
+    required Color color,
+  }) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 48, color: color),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                title,
+                style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                message,
+                style: const TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: color,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Got it!', style: TextStyle(fontSize: 16)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -302,7 +412,7 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '${price.toInt()} TND',
+                      '${price.toInt()} coins',
                       style: const TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
@@ -354,6 +464,10 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
                 ),
               ],
             ),
+
+            // Pickup mode information
+            const SizedBox(height: 12),
+            _buildPickupModeInfo(trip),
 
             // Bookings list
             if (bookings.isNotEmpty) ...[
@@ -432,8 +546,16 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
     final reservationDate = booking['reservationDate'] as String?;
     final passenger = booking['passenger'] as Map<String, dynamic>?;
     final passengerName = passenger != null 
-        ? '${passenger['firstName']} ${passenger['lastName']}'
+        ? '${passenger['firstName'] ?? ''} ${passenger['lastName'] ?? ''}'.trim()
         : 'Unknown Passenger';
+    final passengerRating = (passenger?['rating'] as num?)?.toDouble() ?? 0.0;
+    
+    // Extract pickup point information (for INDIVIDUAL_PICKUP trips)
+    final trip = booking['trip'] as Map<String, dynamic>? ?? {};
+    final tripPickupMode = trip['pickupMode'] as String?;
+    final passengerPickupAddress = booking['passengerPickupAddress'] as String?;
+    final passengerPickupLatitude = booking['passengerPickupLatitude'] as double?;
+    final passengerPickupLongitude = booking['passengerPickupLongitude'] as double?;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -471,12 +593,33 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
                         fontWeight: FontWeight.w500,
                       ),
                     ),
-                    Text(
-                      '$numberOfSeats seat${numberOfSeats > 1 ? 's' : ''} • ${totalPrice.toInt()} TND',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey.shade600,
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          '$numberOfSeats seat${numberOfSeats > 1 ? 's' : ''} • ${totalPrice.toInt()} coins',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                        ),
+                        if (passengerRating > 0) ...[
+                          const SizedBox(width: 8),
+                          Icon(
+                            Icons.star,
+                            size: 12,
+                            color: Colors.amber[600],
+                          ),
+                          const SizedBox(width: 2),
+                          Text(
+                            passengerRating.toStringAsFixed(1),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.amber[700],
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -521,6 +664,74 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
               ),
             ),
           ],
+          
+          // Pickup Point (for INDIVIDUAL_PICKUP trips)
+          if (tripPickupMode == 'INDIVIDUAL_PICKUP' && passengerPickupAddress != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.location_on, color: Colors.blue[600], size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Pickup Location',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[900],
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          passengerPickupAddress,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue[800],
+                          ),
+                        ),
+                        if (passengerPickupLatitude != null && passengerPickupLongitude != null)
+                          Text(
+                            'Lat: ${passengerPickupLatitude.toStringAsFixed(6)}, Lng: ${passengerPickupLongitude.toStringAsFixed(6)}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.blue[600],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Report button (for all statuses except cancelled)
+          if (status.toUpperCase() != 'CANCELLED') ...[
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton.icon(
+                  onPressed: () => _showReportDialog(booking, passenger, trip),
+                  icon: Icon(Icons.flag, size: 16, color: Colors.red[600]),
+                  label: Text(
+                    'Report',
+                    style: TextStyle(color: Colors.red[600], fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ],
 
           // Action buttons for pending bookings
           if (status.toUpperCase() == 'PENDING') ...[
@@ -558,9 +769,332 @@ class _DriverBookingsScreenState extends State<DriverBookingsScreen> {
               ],
             ),
           ],
+          
+          // Chat and contact buttons for confirmed bookings
+          if (status.toUpperCase() == 'CONFIRMED') ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _openChatScreen(booking),
+                    icon: const Icon(Icons.chat, size: 16),
+                    label: const Text('Chat'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green[600],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _openGroupChatScreen(booking),
+                    icon: const Icon(Icons.group, size: 16),
+                    label: const Text('Group'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.purple[600],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _callPassenger(booking),
+                    icon: const Icon(Icons.phone, size: 16),
+                    label: const Text('Call'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.blue[600],
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  Widget _buildPickupModeInfo(Map<String, dynamic> trip) {
+    final pickupMode = trip['pickupMode'] as String?;
+    final pickupPoints = trip['pickupPoints'] as List<dynamic>? ?? [];
+    
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: pickupMode == 'DESIGNATED_POINT' ? Colors.blue.shade50 : Colors.green.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: pickupMode == 'DESIGNATED_POINT' ? Colors.blue.shade200 : Colors.green.shade200,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                pickupMode == 'DESIGNATED_POINT' ? Icons.location_on : Icons.my_location,
+                color: pickupMode == 'DESIGNATED_POINT' ? Colors.blue.shade600 : Colors.green.shade600,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Pickup Mode: ${pickupMode == 'DESIGNATED_POINT' ? 'Designated Points' : 'Individual Pickup'}',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: pickupMode == 'DESIGNATED_POINT' ? Colors.blue.shade700 : Colors.green.shade700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                ),
+              ),
+            ],
+          ),
+          if (pickupMode == 'DESIGNATED_POINT' && pickupPoints.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Designated pickup points:',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            ...pickupPoints.map((point) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.place,
+                      size: 14,
+                      color: Colors.blue.shade600,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        point['address'] ?? 'Pickup point',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ] else if (pickupMode == 'INDIVIDUAL_PICKUP') ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: Colors.green.shade600,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Passengers will share their location with you',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.green.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ] else ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  Icons.help_outline,
+                  size: 14,
+                  color: Colors.grey.shade600,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Pickup details will be provided',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  void _openChatScreen(Map<String, dynamic> booking) {
+    final passenger = booking['passenger'] as Map<String, dynamic>? ?? {};
+    
+    // Find the trip associated with this booking
+    Map<String, dynamic>? trip;
+    for (var t in _myTrips) {
+      final tripId = (t['id'] as num?)?.toInt() ?? 0;
+      final bookings = _tripBookings[tripId] ?? [];
+      if (bookings.any((b) => b['id'] == booking['id'])) {
+        trip = t;
+        break;
+      }
+    }
+    
+    if (trip == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Trip information not found'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChatScreen(
+          booking: booking,
+          trip: trip!,
+          otherUser: passenger,
+        ),
+      ),
+    );
+  }
+
+  void _openGroupChatScreen(Map<String, dynamic> booking) {
+    // Find the trip associated with this booking
+    Map<String, dynamic>? trip;
+    for (var t in _myTrips) {
+      final tripId = (t['id'] as num?)?.toInt() ?? 0;
+      final bookings = _tripBookings[tripId] ?? [];
+      if (bookings.any((b) => b['id'] == booking['id'])) {
+        trip = t;
+        break;
+      }
+    }
+    
+    if (trip == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Trip information not found'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+    
+    // Get current user info from AuthProvider or pass a simple user object
+    final currentUser = {
+      'id': 20, // This should be dynamically retrieved from AuthProvider
+      'firstName': 'Current',
+      'lastName': 'User',
+    };
+    
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => GroupChatScreen(
+          trip: trip!,
+          currentUser: currentUser,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _callPassenger(Map<String, dynamic> booking) async {
+    final passenger = booking['passenger'] as Map<String, dynamic>? ?? {};
+    final phoneNumber = passenger['phoneNumber'] as String?;
+    final passengerName = '${passenger['firstName']} ${passenger['lastName']}';
+    
+    if (phoneNumber == null || phoneNumber.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Passenger phone number not available'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      // Clean phone number (remove spaces, dashes, etc.)
+      final cleanPhoneNumber = phoneNumber.replaceAll(RegExp(r'[^\d+]'), '');
+      
+      // Create tel: URL
+      final Uri phoneUri = Uri(scheme: 'tel', path: cleanPhoneNumber);
+      
+      // Check if device can make phone calls
+      if (await canLaunchUrl(phoneUri)) {
+        // Launch phone app directly
+        await launchUrl(phoneUri);
+      } else {
+        // Fallback: show dialog with copy option
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Call Passenger'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('Passenger: $passengerName'),
+                const SizedBox(height: 8),
+                Text('Phone: $phoneNumber'),
+                const SizedBox(height: 16),
+                const Text(
+                  'Unable to launch phone app. You can copy this number and call manually.',
+                  style: TextStyle(fontSize: 14),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                  // Copy to clipboard
+                  Clipboard.setData(ClipboardData(text: phoneNumber));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Phone number copied to clipboard'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                },
+                child: const Text('Copy Number'),
+              ),
+            ],
+          ),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to call: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   String _formatDateTime(DateTime dateTime) {

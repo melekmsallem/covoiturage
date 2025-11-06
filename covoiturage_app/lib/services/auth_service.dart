@@ -1,15 +1,18 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'api_service.dart';
 
 class AuthService {
-  static final String baseUrl = kIsWeb
-      ? 'http://localhost:8081/api/auth'
-      : 'http://192.168.1.17:8081/api/auth'; // Your PC's actual IP address
+  static Future<String> _authBase() async {
+    final base = kIsWeb ? 'http://localhost:8081/api' : await ApiService.getResolvedBaseUrl();
+    return '$base/auth';
+  }
 
   // Sign In
   Future<Map<String, dynamic>> signIn(String usernameOrEmail, String password) async {
     try {
+      final baseUrl = await _authBase();
       final response = await http.post(
         Uri.parse('$baseUrl/signin'),
         headers: {
@@ -19,7 +22,7 @@ class AuthService {
           'usernameOrEmail': usernameOrEmail,
           'password': password,
         }),
-      );
+      ).timeout(const Duration(seconds: 30));
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
@@ -35,8 +38,8 @@ class AuthService {
   Future<bool> checkUsernameAvailability(String username) async {
     try {
       // Use the correct endpoint: /api/users/check-username/{username}
-      final usersBaseUrl = baseUrl.replaceAll('/api/auth', '/api/users');
-      final url = '$usersBaseUrl/check-username/$username';
+      final base = kIsWeb ? 'http://localhost:8081/api' : await ApiService.getResolvedBaseUrl();
+      final url = '$base/users/check-username/$username';
       
       print('🔍 Checking username availability: $url');
       
@@ -83,6 +86,7 @@ class AuthService {
     String? preferredPaymentMethod,
   }) async {
     try {
+      final baseUrl = await _authBase();
       final response = await http.post(
         Uri.parse('$baseUrl/signup'),
         headers: {
@@ -109,6 +113,41 @@ class AuthService {
         return jsonDecode(response.body);
       } else {
         throw Exception('Failed to sign up: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
+  // Update User Profile
+  Future<Map<String, dynamic>> updateProfile({
+    required int userId,
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String phoneNumber,
+  }) async {
+    try {
+      final base = kIsWeb ? 'http://localhost:8081/api' : await ApiService.getResolvedBaseUrl();
+      final usersBaseUrl = '$base/users';
+      final response = await http.put(
+        Uri.parse('$usersBaseUrl/$userId'),
+        headers: {
+          'Content-Type': 'application/json',
+          // Add authorization header if needed
+        },
+        body: jsonEncode({
+          'firstName': firstName,
+          'lastName': lastName,
+          'email': email,
+          'phoneNumber': phoneNumber,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        throw Exception('Failed to update profile: ${response.body}');
       }
     } catch (e) {
       throw Exception('Network error: $e');

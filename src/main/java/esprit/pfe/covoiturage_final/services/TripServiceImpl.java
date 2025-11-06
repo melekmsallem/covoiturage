@@ -9,6 +9,8 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 import java.util.List;
 import java.util.Map;
@@ -19,6 +21,11 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class TripServiceImpl implements TripService {
+
+    private static final double FUEL_PRICE_TND_PER_LITER = 1.8; // Updated price reference
+    private static final double AVERAGE_FUEL_CONSUMPTION_PER_KM = 0.07; // 7L / 100km
+    private static final double MAX_SEAT_PRICE_FUEL_RATIO = 0.30; // Allow up to 30% of fuel cost per seat
+    private static final double FRIENDLY_PRICE_STEP = 5.0; // Round caps to the closest 5 coins
     
     @Autowired
     private VoyageRepository voyageRepository;
@@ -41,6 +48,12 @@ public class TripServiceImpl implements TripService {
     @Autowired
     private NotificationService notificationService;
     
+    @Autowired
+    private CoinService coinService;
+    
+    @PersistenceContext
+    private EntityManager entityManager;
+    
     @Override
     public TripResponse createTrip(CreateTripRequest request, Long driverId) {
         // Get driver
@@ -61,6 +74,16 @@ public class TripServiceImpl implements TripService {
         trip.setDescription(request.getDescription());
         trip.setStatus(Voyage.VoyageStatus.PLANNED);
         trip.setConducteurId(driverId);
+        
+        // Set pickup mode
+        if (request.getPickupMode() != null) {
+            try {
+                trip.setPickupMode(Voyage.PickupMode.valueOf(request.getPickupMode()));
+            } catch (IllegalArgumentException e) {
+                // Default to DESIGNATED_POINT if invalid mode
+                trip.setPickupMode(Voyage.PickupMode.DESIGNATED_POINT);
+            }
+        }
         
         // Map cities (by name) to entity relations before saving (FKs may be NOT NULL)
         if (request.getDepartureCity() == null || request.getDepartureCity().trim().isEmpty()) {
@@ -85,6 +108,12 @@ public class TripServiceImpl implements TripService {
         
         // Create GPS points
         createGPSPoints(trip.getId(), request);
+        
+        // Create pickup points if designated mode
+        if (trip.getPickupMode() == Voyage.PickupMode.DESIGNATED_POINT && 
+            request.getPickupPoints() != null && !request.getPickupPoints().isEmpty()) {
+            createPickupPoints(trip.getId(), request.getPickupPoints());
+        }
         
         // Send notification to driver
         notificationService.notifyTripCreated(driverId, trip.getId(), trip.getDescription());
@@ -492,10 +521,98 @@ public class TripServiceImpl implements TripService {
             throw new RuntimeException("Can only complete active trips");
         }
         
+        // Update trip status to COMPLETED
         trip.setStatus(Voyage.VoyageStatus.COMPLETED);
         trip = voyageRepository.save(trip);
         
+        // Update all confirmed reservations for this trip to COMPLETED status
+        List<Reservation> reservations = reservationRepository.findByVoyageId(tripId);
+        for (Reservation reservation : reservations) {
+            if (reservation.getStatus() == Reservation.ReservationStatus.CONFIRMED) {
+                reservation.setStatus(Reservation.ReservationStatus.COMPLETED);
+                reservationRepository.save(reservation);
+            }
+        }
+        
+        // Flush changes to ensure they are immediately persisted
+        entityManager.flush();
+        
         return convertToTripResponse(trip);
+    }
+    
+    @Override
+    public TripStartReminderResponse getTripStartDetails(Long tripId, Long driverId) {
+        Voyage trip = voyageRepository.findById(tripId)
+            .orElseThrow(() -> new RuntimeException("Trip not found"));
+        
+        if (!trip.getConducteurId().equals(driverId)) {
+            throw new RuntimeException("You can only view details for your own trips");
+        }
+        
+        TripStartReminderResponse response = new TripStartReminderResponse();
+        response.setTripId(trip.getId());
+        response.setDepartureCity(trip.getDepartureVille() != null ? trip.getDepartureVille().getName() : "Unknown");
+        response.setArrivalCity(trip.getArrivalVille() != null ? trip.getArrivalVille().getName() : "Unknown");
+        response.setPickupMode(trip.getPickupMode() != null ? trip.getPickupMode().name() : "DESIGNATED_POINT");
+        
+        List<TripStartReminderResponse.OptimizedPickupPoint> pickupPoints = new ArrayList<>();
+        
+        if (trip.getPickupMode() == Voyage.PickupMode.DESIGNATED_POINT) {
+            // Get designated pickup points for the trip
+            List<Point_GPS> points = pointGpsRepository.findByVoyageIdAndPointType(tripId, Point_GPS.PointType.PICKUP);
+            for (Point_GPS point : points) {
+                TripStartReminderResponse.OptimizedPickupPoint pp = new TripStartReminderResponse.OptimizedPickupPoint();
+                pp.setPointId(point.getId());
+                pp.setAddress(point.getAddress());
+                pp.setLatitude(point.getLatitude());
+                pp.setLongitude(point.getLongitude());
+                pp.setOrder(point.getPickupOrder());
+                pp.setMaxWaitingTime(point.getMaxWaitingTime());
+                pickupPoints.add(pp);
+            }
+        } else if (trip.getPickupMode() == Voyage.PickupMode.INDIVIDUAL_PICKUP) {
+            // Get confirmed bookings with individual pickup points
+            List<Reservation> confirmedBookings = reservationRepository.findByVoyageIdAndStatus(tripId, Reservation.ReservationStatus.CONFIRMED);
+            List<TripStartReminderResponse.OptimizedPickupPoint> tempPoints = new ArrayList<>();
+            
+            for (Reservation booking : confirmedBookings) {
+                if (booking.getPassengerPickupAddress() != null) {
+                    TripStartReminderResponse.OptimizedPickupPoint pp = new TripStartReminderResponse.OptimizedPickupPoint();
+                    pp.setAddress(booking.getPassengerPickupAddress());
+                    pp.setLatitude(booking.getPassengerPickupLatitude());
+                    pp.setLongitude(booking.getPassengerPickupLongitude());
+                    pp.setSeats(booking.getNumberOfSeats());
+                    
+                    // Get passenger name
+                    User passenger = userRepository.findById(booking.getPassagerId()).orElse(null);
+                    if (passenger != null) {
+                        pp.setPassengerName(passenger.getFirstName() + " " + passenger.getLastName());
+                    }
+                    
+                    tempPoints.add(pp);
+                }
+            }
+            
+            // Optimize route: find START point and sort by distance from START
+            List<Point_GPS> startPoints = pointGpsRepository.findByVoyageIdAndPointType(tripId, Point_GPS.PointType.START);
+            if (!startPoints.isEmpty() && tempPoints.size() > 1) {
+                Point_GPS startPoint = startPoints.get(0);
+                double startLat = startPoint.getLatitude();
+                double startLon = startPoint.getLongitude();
+                
+                // Sort by distance from start point (nearest first)
+                tempPoints.sort((p1, p2) -> {
+                    double dist1 = calculateDistance(startLat, startLon, p1.getLatitude(), p1.getLongitude());
+                    double dist2 = calculateDistance(startLat, startLon, p2.getLatitude(), p2.getLongitude());
+                    return Double.compare(dist1, dist2);
+                });
+            }
+            
+            pickupPoints.addAll(tempPoints);
+        }
+        
+        response.setPickupPoints(pickupPoints);
+        return response;
     }
     
     @Override
@@ -520,16 +637,47 @@ public class TripServiceImpl implements TripService {
             throw new RuntimeException("User is not a passenger");
         }
         
+        // Calculate total price
+        Double totalPrice = trip.getPricePerSeat() * request.getNumberOfSeats();
+        
+        // Validate passenger has sufficient coin balance BEFORE creating booking
+        if (!coinService.hasSufficientBalance(passengerId, totalPrice)) {
+            throw new RuntimeException("Insufficient coin balance. Please purchase coins to make this booking.");
+        }
+        
         // Create reservation
         Reservation reservation = new Reservation();
         reservation.setVoyageId(request.getTripId());
         reservation.setPassagerId(passengerId);
         reservation.setNumberOfSeats(request.getNumberOfSeats());
-        reservation.setTotalPrice(trip.getPricePerSeat() * request.getNumberOfSeats());
+        reservation.setTotalPrice(totalPrice);
         reservation.setStatus(Reservation.ReservationStatus.PENDING);
         reservation.setNotes(request.getNotes());
         
+        // Set pickup point for individual pickup trips
+        if (trip.getPickupMode() == Voyage.PickupMode.INDIVIDUAL_PICKUP) {
+            reservation.setPassengerPickupAddress(request.getPickupAddress());
+            reservation.setPassengerPickupLatitude(request.getPickupLatitude());
+            reservation.setPassengerPickupLongitude(request.getPickupLongitude());
+        }
+        
         reservation = reservationRepository.save(reservation);
+        
+        // Deduct coins from passenger immediately when booking is created
+        try {
+            coinService.spendCoins(
+                passengerId,
+                totalPrice,
+                "Payment for trip booking #" + reservation.getId(),
+                "booking_" + reservation.getId()
+            );
+        } catch (Exception e) {
+            // If coin deduction fails, delete the booking and restore seats
+            reservationRepository.delete(reservation);
+            trip.setAvailableSeats(trip.getAvailableSeats() + request.getNumberOfSeats());
+            voyageRepository.save(trip);
+            throw new RuntimeException("Payment failed: " + e.getMessage());
+        }
         
         // Update available seats
         trip.setAvailableSeats(trip.getAvailableSeats() - request.getNumberOfSeats());
@@ -618,6 +766,24 @@ public class TripServiceImpl implements TripService {
             throw new RuntimeException("Can only confirm pending bookings");
         }
         
+        // Coins are already deducted from passenger when booking was created
+        // Now add them to the driver's balance
+        Double totalPrice = reservation.getTotalPrice();
+        if (totalPrice != null && totalPrice > 0) {
+            try {
+                coinService.refundCoins(
+                    trip.getConducteurId(),
+                    totalPrice,
+                    "Payment received for trip booking #" + bookingId,
+                    "booking_" + bookingId
+                );
+            } catch (Exception e) {
+                // Log error but don't fail the confirmation
+                System.err.println("Failed to transfer coins to driver: " + e.getMessage());
+            }
+        }
+        
+        // Update reservation status
         reservation.setStatus(Reservation.ReservationStatus.CONFIRMED);
         reservation = reservationRepository.save(reservation);
         
@@ -641,6 +807,22 @@ public class TripServiceImpl implements TripService {
         
         if (reservation.getStatus() != Reservation.ReservationStatus.PENDING) {
             throw new RuntimeException("Can only decline pending bookings");
+        }
+        
+        // Refund coins to passenger since booking is declined
+        Double totalPrice = reservation.getTotalPrice();
+        if (totalPrice != null && totalPrice > 0) {
+            try {
+                coinService.refundCoins(
+                    reservation.getPassagerId(),
+                    totalPrice,
+                    "Refund for declined trip booking #" + bookingId,
+                    "booking_refund_" + bookingId
+                );
+            } catch (Exception e) {
+                // Log error but don't fail the decline
+                System.err.println("Failed to refund coins to passenger: " + e.getMessage());
+            }
         }
         
         // Mark booking as cancelled (declined) and restore seats
@@ -675,6 +857,26 @@ public class TripServiceImpl implements TripService {
         
         if (reservation.getStatus() == Reservation.ReservationStatus.COMPLETED) {
             throw new RuntimeException("Cannot cancel completed bookings");
+        }
+        
+        // Refund coins if booking was confirmed (coins were transferred to driver)
+        if (reservation.getStatus() == Reservation.ReservationStatus.CONFIRMED) {
+            Double totalPrice = reservation.getTotalPrice();
+            if (totalPrice != null && totalPrice > 0) {
+                try {
+                    // Transfer coins back from driver to passenger
+                    coinService.transferCoins(
+                        trip.getConducteurId(),
+                        reservation.getPassagerId(),
+                        totalPrice,
+                        "Refund for cancelled booking #" + bookingId,
+                        "booking_" + bookingId + "_refund"
+                    );
+                } catch (Exception e) {
+                    // Log error but don't fail the cancellation
+                    System.err.println("Failed to refund coins for cancelled booking " + bookingId + ": " + e.getMessage());
+                }
+            }
         }
         
         reservation.setStatus(Reservation.ReservationStatus.CANCELLED);
@@ -815,6 +1017,7 @@ public class TripServiceImpl implements TripService {
         response.setMaxSeats(trip.getMaxSeats());
         response.setDescription(trip.getDescription());
         response.setStatus(trip.getStatus());
+        response.setPickupMode(trip.getPickupMode());
         response.setCreatedAt(trip.getCreatedAt());
         response.setUpdatedAt(trip.getUpdatedAt());
         
@@ -894,6 +1097,52 @@ public class TripServiceImpl implements TripService {
             response.setCities(cityInfos);
         }
         
+        // Get reservations and passengers (for completed trips - useful for rating)
+        List<Reservation> reservations = reservationRepository.findByVoyageId(trip.getId());
+        if (reservations != null && !reservations.isEmpty()) {
+            // Filter to only CONFIRMED or COMPLETED reservations
+            List<Reservation> validReservations = reservations.stream()
+                .filter(res -> res.getStatus() == Reservation.ReservationStatus.CONFIRMED || 
+                              res.getStatus() == Reservation.ReservationStatus.COMPLETED)
+                .collect(Collectors.toList());
+            
+            List<TripResponse.ReservationInfo> reservationInfos = new ArrayList<>();
+            List<TripResponse.PassengerInfo> passengerInfos = new ArrayList<>();
+            
+            for (Reservation res : validReservations) {
+                // Create reservation info
+                TripResponse.ReservationInfo resInfo = new TripResponse.ReservationInfo();
+                resInfo.setId(res.getId());
+                resInfo.setPassengerId(res.getPassagerId());
+                resInfo.setNumberOfSeats(res.getNumberOfSeats());
+                resInfo.setStatus(res.getStatus().name());
+                
+                // Get passenger information
+                User passenger = userRepository.findById(res.getPassagerId()).orElse(null);
+                if (passenger != null) {
+                    TripResponse.PassengerInfo passengerInfo = new TripResponse.PassengerInfo();
+                    passengerInfo.setId(passenger.getId());
+                    passengerInfo.setUsername(passenger.getUsername());
+                    passengerInfo.setFirstName(passenger.getFirstName());
+                    passengerInfo.setLastName(passenger.getLastName());
+                    passengerInfo.setPhoneNumber(passenger.getPhoneNumber());
+                    
+                    resInfo.setPassenger(passengerInfo);
+                    reservationInfos.add(resInfo);
+                    
+                    // Add to passengers list (avoid duplicates)
+                    if (passengerInfos.stream().noneMatch(p -> p.getId().equals(passenger.getId()))) {
+                        passengerInfos.add(passengerInfo);
+                    }
+                } else {
+                    reservationInfos.add(resInfo);
+                }
+            }
+            
+            response.setReservations(reservationInfos);
+            response.setPassengers(passengerInfos);
+        }
+        
         return response;
     }
     
@@ -905,6 +1154,11 @@ public class TripServiceImpl implements TripService {
         response.setStatus(reservation.getStatus());
         response.setReservationDate(reservation.getReservationDate());
         response.setNotes(reservation.getNotes());
+        
+        // Set passenger pickup point information
+        response.setPassengerPickupAddress(reservation.getPassengerPickupAddress());
+        response.setPassengerPickupLatitude(reservation.getPassengerPickupLatitude());
+        response.setPassengerPickupLongitude(reservation.getPassengerPickupLongitude());
         
         // Get trip information
         Voyage trip = voyageRepository.findById(reservation.getVoyageId()).orElse(null);
@@ -937,6 +1191,18 @@ public class TripServiceImpl implements TripService {
                 tripInfo.setVehicleModel(conducteur.getVehicleModel());
                 tripInfo.setVehicleColor(conducteur.getVehicleColor());
                 tripInfo.setVehiclePlate(conducteur.getVehiclePlate());
+                
+                // Set driver information separately
+                BookingResponse.DriverInfo driverInfo = new BookingResponse.DriverInfo();
+                driverInfo.setId(conducteur.getId());
+                driverInfo.setUsername(conducteur.getUsername());
+                driverInfo.setFirstName(conducteur.getFirstName());
+                driverInfo.setLastName(conducteur.getLastName());
+                driverInfo.setPhoneNumber(conducteur.getPhoneNumber());
+                driverInfo.setVehicleModel(conducteur.getVehicleModel());
+                driverInfo.setVehicleColor(conducteur.getVehicleColor());
+                driverInfo.setVehiclePlate(conducteur.getVehiclePlate());
+                response.setDriver(driverInfo);
             }
             
             response.setTrip(tripInfo);
@@ -955,6 +1221,136 @@ public class TripServiceImpl implements TripService {
         }
         
         return response;
+    }
+    
+    @Override
+    public BookingResponse setPassengerPickupPoint(Long bookingId, Long passengerId, String address, Double latitude, Double longitude) {
+        Reservation reservation = reservationRepository.findById(bookingId)
+            .orElseThrow(() -> new RuntimeException("Booking not found"));
+        
+        // Check if user is the passenger
+        if (!reservation.getPassagerId().equals(passengerId)) {
+            throw new RuntimeException("You can only set pickup point for your own bookings");
+        }
+        
+        // Check if booking is confirmed
+        if (reservation.getStatus() != Reservation.ReservationStatus.CONFIRMED) {
+            throw new RuntimeException("You can only set pickup point for confirmed bookings");
+        }
+        
+        // Get trip to check pickup mode
+        Voyage trip = voyageRepository.findById(reservation.getVoyageId())
+            .orElseThrow(() -> new RuntimeException("Trip not found"));
+        
+        if (trip.getPickupMode() != Voyage.PickupMode.INDIVIDUAL_PICKUP) {
+            throw new RuntimeException("Pickup point can only be set for individual pickup trips");
+        }
+        
+        // Validate pickup point is within departure city
+        if (trip.getDepartureVille() != null) {
+            double cityLat = trip.getDepartureVille().getLatitude();
+            double cityLng = trip.getDepartureVille().getLongitude();
+            
+            // Calculate distance between pickup point and city center
+            double distance = calculateDistance(cityLat, cityLng, latitude, longitude);
+            
+            // Allow pickup within 20km of city center
+            if (distance > 20.0) {
+                throw new RuntimeException("Pickup point must be within " + trip.getDepartureVille().getName() + " city limits");
+            }
+        }
+        
+        // Set pickup point
+        reservation.setPassengerPickupAddress(address);
+        reservation.setPassengerPickupLatitude(latitude);
+        reservation.setPassengerPickupLongitude(longitude);
+        
+        reservation = reservationRepository.save(reservation);
+        
+        return convertToBookingResponse(reservation);
+    }
+    
+    @Override
+    public List<Map<String, Object>> getTripPickupPoints(Long tripId, Long userId) {
+        Voyage trip = voyageRepository.findById(tripId)
+            .orElseThrow(() -> new RuntimeException("Trip not found"));
+        
+        // Check if user is the driver or has a confirmed booking for this trip
+        boolean isDriver = trip.getConducteurId().equals(userId);
+        boolean hasConfirmedBooking = false;
+        
+        if (!isDriver) {
+            List<Reservation> userBookings = reservationRepository.findByVoyageIdAndPassagerId(tripId, userId);
+            hasConfirmedBooking = userBookings.stream()
+                .anyMatch(booking -> booking.getStatus() == Reservation.ReservationStatus.CONFIRMED);
+        }
+        
+        if (!isDriver && !hasConfirmedBooking) {
+            throw new RuntimeException("You can only view pickup points for your own trips or confirmed bookings");
+        }
+        
+        List<Map<String, Object>> pickupPoints = new ArrayList<>();
+        
+        if (trip.getPickupMode() == Voyage.PickupMode.DESIGNATED_POINT) {
+            // Get designated pickup points
+            List<Point_GPS> designatedPoints = pointGpsRepository.findByVoyageIdAndPointType(tripId, Point_GPS.PointType.PICKUP);
+            for (Point_GPS point : designatedPoints) {
+                Map<String, Object> pointData = new HashMap<>();
+                pointData.put("id", point.getId());
+                pointData.put("address", point.getAddress());
+                pointData.put("latitude", point.getLatitude());
+                pointData.put("longitude", point.getLongitude());
+                pointData.put("pickupTime", point.getPickupTime());
+                pointData.put("maxWaitingTime", point.getMaxWaitingTime());
+                pointData.put("pickupOrder", point.getPickupOrder());
+                pointData.put("type", "DESIGNATED");
+                pickupPoints.add(pointData);
+            }
+        } else if (trip.getPickupMode() == Voyage.PickupMode.INDIVIDUAL_PICKUP) {
+            // Get passenger pickup points from confirmed bookings
+            List<Reservation> confirmedBookings = reservationRepository.findByVoyageId(tripId).stream()
+                .filter(booking -> booking.getStatus() == Reservation.ReservationStatus.CONFIRMED)
+                .filter(booking -> booking.getPassengerPickupAddress() != null)
+                .collect(Collectors.toList());
+            
+            for (Reservation booking : confirmedBookings) {
+                Map<String, Object> pointData = new HashMap<>();
+                pointData.put("id", booking.getId());
+                pointData.put("address", booking.getPassengerPickupAddress());
+                pointData.put("latitude", booking.getPassengerPickupLatitude());
+                pointData.put("longitude", booking.getPassengerPickupLongitude());
+                pointData.put("passengerId", booking.getPassagerId());
+                pointData.put("numberOfSeats", booking.getNumberOfSeats());
+                pointData.put("type", "PASSENGER");
+                
+                // Get passenger info
+                User passenger = userRepository.findById(booking.getPassagerId()).orElse(null);
+                if (passenger != null) {
+                    pointData.put("passengerName", passenger.getFirstName() + " " + passenger.getLastName());
+                    pointData.put("passengerPhone", passenger.getPhoneNumber());
+                }
+                
+                pickupPoints.add(pointData);
+            }
+        }
+        
+        return pickupPoints;
+    }
+    
+    private double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+        final double EARTH_RADIUS_KM = 6371.0;
+        
+        double lat1Rad = Math.toRadians(lat1);
+        double lat2Rad = Math.toRadians(lat2);
+        double deltaLatRad = Math.toRadians(lat2 - lat1);
+        double deltaLngRad = Math.toRadians(lng2 - lng1);
+        
+        double a = Math.sin(deltaLatRad / 2) * Math.sin(deltaLatRad / 2) +
+                Math.cos(lat1Rad) * Math.cos(lat2Rad) *
+                Math.sin(deltaLngRad / 2) * Math.sin(deltaLngRad / 2);
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        
+        return EARTH_RADIUS_KM * c;
     }
     
     // Trip Creation Enhancement Methods
@@ -1016,6 +1412,32 @@ public class TripServiceImpl implements TripService {
         if (request.getPricePerSeat().doubleValue() > 320) { // 320 TND ≈ 100 EUR
             warnings.add("Price per seat is quite high (over 320 TND)");
         }
+
+        Double estimatedFuelCost = null;
+        Double maxRecommendedSeatPrice = null;
+        if (request.getDepartureCity() != null && request.getArrivalCity() != null &&
+            !request.getDepartureCity().trim().isEmpty() && !request.getArrivalCity().trim().isEmpty()) {
+            estimatedFuelCost = estimateFuelCostForRoute(request.getDepartureCity(), request.getArrivalCity());
+            if (estimatedFuelCost != null && estimatedFuelCost > 0) {
+                double computedCap = calculateSeatPriceCap(estimatedFuelCost);
+                if (computedCap > 0) {
+                    maxRecommendedSeatPrice = computedCap;
+                }
+                if (maxRecommendedSeatPrice != null && maxRecommendedSeatPrice > 0 &&
+                    request.getPricePerSeat().doubleValue() > maxRecommendedSeatPrice) {
+                    errors.add(String.format(
+                        "Price per seat cannot exceed %.0f coins for this route (estimated fuel cost %.2f TND)",
+                        maxRecommendedSeatPrice,
+                        estimatedFuelCost
+                    ));
+                }
+            }
+        }
+
+        if (request.getPricePerSeat().doubleValue() >= FRIENDLY_PRICE_STEP &&
+            !isMultipleOfStep(request.getPricePerSeat().doubleValue(), FRIENDLY_PRICE_STEP)) {
+            errors.add("Price per seat must be rounded to 5-coin steps (e.g., 10, 15, 20, 25, 30)");
+        }
         
         // Validate seats
         if (request.getMaxSeats() <= 0 || request.getMaxSeats() > 8) {
@@ -1039,6 +1461,8 @@ public class TripServiceImpl implements TripService {
         validation.put("valid", errors.isEmpty());
         validation.put("errors", errors);
         validation.put("warnings", warnings);
+        validation.put("estimatedFuelCost", estimatedFuelCost);
+        validation.put("maxRecommendedPricePerSeat", maxRecommendedSeatPrice);
         
         return validation;
     }
@@ -1053,17 +1477,28 @@ public class TripServiceImpl implements TripService {
         // Get actual GPS coordinates and calculate real distance
         Map<String, Object> routeInfo = calculateRealDistanceBetweenCities(departureAddress, arrivalAddress);
         double distance = (Double) routeInfo.get("distance");
-        Map<String, Double> departureCoords = (Map<String, Double>) routeInfo.get("departureCoords");
-        Map<String, Double> arrivalCoords = (Map<String, Double>) routeInfo.get("arrivalCoords");
+        Map<String, Double> departureCoords = extractCoordinateMap(routeInfo.get("departureCoords"));
+        Map<String, Double> arrivalCoords = extractCoordinateMap(routeInfo.get("arrivalCoords"));
         
-        // Calculate duration based on realistic average speed (80 km/h for highways)
-        int duration = (int) (distance / 80 * 60); // Convert to minutes
+        // Calculate duration based on realistic average speed for Tunisia
+        // Shorter distances: slower average speed (50-60 km/h due to city traffic)
+        // Longer distances: higher average speed (80-90 km/h due to highways)
+        double averageSpeed;
+        if (distance < 100) {
+            averageSpeed = 55; // City-to-city with some highway
+        } else if (distance < 200) {
+            averageSpeed = 75; // Mix of city and highway
+        } else {
+            averageSpeed = 85; // Mostly highway driving
+        }
+        
+        int duration = (int) (distance / averageSpeed * 60); // Convert to minutes
         
         estimation.put("distance", Math.round(distance * 100.0) / 100.0);
         estimation.put("duration", duration);
         estimation.put("durationFormatted", formatDuration(duration));
-        // Convert fuel cost to Tunisian dinars (1 EUR ≈ 3.2 TND, fuel cost 0.15 EUR/km)
-        double fuelCostInTND = distance * 0.15 * 3.2; // Convert EUR to TND
+        // More accurate fuel cost calculation for Tunisia (1.8 TND/liter, 7L/100km average)
+        double fuelCostInTND = distance * FUEL_PRICE_TND_PER_LITER * AVERAGE_FUEL_CONSUMPTION_PER_KM;
         estimation.put("estimatedFuelCost", Math.round(fuelCostInTND * 100.0) / 100.0);
         estimation.put("currency", "TND");
         estimation.put("route", Map.of(
@@ -1113,14 +1548,22 @@ public class TripServiceImpl implements TripService {
                 departureCity.getLatitude() != null && departureCity.getLongitude() != null &&
                 arrivalCity.getLatitude() != null && arrivalCity.getLongitude() != null) {
                 
-                // Calculate distance using Haversine formula
-                double distance = calculateHaversineDistance(
+                // Calculate straight-line distance using Haversine formula
+                double straightLineDistance = calculateHaversineDistance(
                     departureCity.getLatitude(), departureCity.getLongitude(),
                     arrivalCity.getLatitude(), arrivalCity.getLongitude()
                 );
                 
+                // Convert straight-line distance to realistic driving distance
+                // For Tunisia, driving distance is typically 1.4-2.2x the straight-line distance
+                // depending on road conditions and route availability
+                double distanceMultiplier = calculateDrivingDistanceMultiplier(straightLineDistance);
+                double distance = straightLineDistance * distanceMultiplier;
+                
                 System.out.println("DEBUG: Found cities in DB: " + departureCity.getName() + " -> " + arrivalCity.getName());
-                System.out.println("DEBUG: Calculated distance: " + distance + " km");
+                System.out.println("DEBUG: Straight-line distance: " + straightLineDistance + " km");
+                System.out.println("DEBUG: Distance multiplier: " + distanceMultiplier + "x");
+                System.out.println("DEBUG: Final driving distance: " + distance + " km");
                 
                 result.put("distance", distance);
                 result.put("departureCoords", Map.of(
@@ -1148,7 +1591,61 @@ public class TripServiceImpl implements TripService {
         
         return result;
     }
+
+    private Double estimateFuelCostForRoute(String departureCity, String arrivalCity) {
+        try {
+            Map<String, Object> routeInfo = calculateRealDistanceBetweenCities(departureCity, arrivalCity);
+            Object distanceObj = routeInfo.get("distance");
+            if (distanceObj instanceof Double distance && distance > 0) {
+                double fuelCost = distance * FUEL_PRICE_TND_PER_LITER * AVERAGE_FUEL_CONSUMPTION_PER_KM;
+                return Math.round(fuelCost * 100.0) / 100.0;
+            }
+        } catch (Exception e) {
+            System.out.println("DEBUG: Unable to estimate fuel cost: " + e.getMessage());
+        }
+        return null;
+    }
+
+    private double calculateSeatPriceCap(double estimatedFuelCost) {
+        double rawLimit = estimatedFuelCost * MAX_SEAT_PRICE_FUEL_RATIO;
+        if (rawLimit <= 0) {
+            return 0;
+        }
+        if (rawLimit < FRIENDLY_PRICE_STEP) {
+            return Math.round(rawLimit * 100.0) / 100.0;
+        }
+        double rounded = Math.floor(rawLimit / FRIENDLY_PRICE_STEP) * FRIENDLY_PRICE_STEP;
+        if (rounded < FRIENDLY_PRICE_STEP) {
+            rounded = FRIENDLY_PRICE_STEP;
+        }
+        return rounded;
+    }
+
+    private boolean isMultipleOfStep(double value, double step) {
+        double remainder = value % step;
+        return Math.abs(remainder) < 0.0001 || Math.abs(remainder - step) < 0.0001;
+    }
     
+    private Map<String, Double> extractCoordinateMap(Object value) {
+        Map<String, Double> fallback = new HashMap<>();
+        fallback.put("latitude", 0.0);
+        fallback.put("longitude", 0.0);
+
+        if (value instanceof Map<?, ?> rawMap) {
+            Object lat = rawMap.get("latitude");
+            Object lon = rawMap.get("longitude");
+
+            if (lat instanceof Number && lon instanceof Number) {
+                Map<String, Double> coords = new HashMap<>();
+                coords.put("latitude", ((Number) lat).doubleValue());
+                coords.put("longitude", ((Number) lon).doubleValue());
+                return coords;
+            }
+        }
+
+        return fallback;
+    }
+
     private double calculateHaversineDistance(double lat1, double lon1, double lat2, double lon2) {
         final int R = 6371; // Radius of the earth in km
         
@@ -1163,6 +1660,30 @@ public class TripServiceImpl implements TripService {
         return distance;
     }
     
+    /**
+     * Calculate driving distance multiplier based on straight-line distance
+     * For Tunisia, this accounts for road infrastructure and typical routing
+     */
+    private double calculateDrivingDistanceMultiplier(double straightLineDistance) {
+        // For short distances (< 50km), roads are more direct: 1.3-1.5x
+        if (straightLineDistance < 50) {
+            return 1.4;
+        }
+        // For medium distances (50-150km), factor in highway access: 1.5-1.8x
+        else if (straightLineDistance < 150) {
+            return 1.65;
+        }
+        // For long distances (> 150km), highways become more efficient: 1.6-2.0x
+        else if (straightLineDistance < 300) {
+            return 1.8;
+        }
+        // For very long distances, highways are most efficient: 1.7-2.2x
+        else {
+            return 1.95;
+        }
+    }
+    
+    @SuppressWarnings("unused")
     private String normalizeCityName(String cityName) {
         if (cityName == null) return "";
         return cityName.toLowerCase()
@@ -1178,6 +1699,7 @@ public class TripServiceImpl implements TripService {
             .trim();
     }
     
+    @SuppressWarnings("unused")
     private double getDefaultDistanceForCity(String departure, String arrival) {
         // For unknown city combinations, use a reasonable default
         // This could be enhanced with a more sophisticated distance calculation
@@ -1222,5 +1744,26 @@ public class TripServiceImpl implements TripService {
         } else {
             return String.format("%dm", mins);
         }
+    }
+    
+    private void createPickupPoints(Long tripId, List<GPSPointRequest> pickupPoints) {
+        List<Point_GPS> points = new ArrayList<>();
+        
+        for (int i = 0; i < pickupPoints.size(); i++) {
+            GPSPointRequest pointRequest = pickupPoints.get(i);
+            
+            Point_GPS point = new Point_GPS();
+            point.setVoyageId(tripId);
+            point.setLatitude(pointRequest.getLatitude());
+            point.setLongitude(pointRequest.getLongitude());
+            point.setAddress(pointRequest.getAddress());
+            point.setPointType(Point_GPS.PointType.PICKUP);
+            point.setPickupOrder(i + 1);
+            point.setMaxWaitingTime(5); // Default 5 minutes
+            
+            points.add(point);
+        }
+        
+        pointGpsRepository.saveAll(points);
     }
 }

@@ -23,7 +23,8 @@ public interface PaiementRepository extends JpaRepository<Paiement, Long> {
     
     List<Paiement> findByPaymentDateBetween(LocalDateTime startDate, LocalDateTime endDate);
     
-    Paiement findOneByReservationId(Long reservationId);
+    @Query("SELECT p FROM Paiement p WHERE p.reservationId = :reservationId ORDER BY p.paymentDate DESC")
+    List<Paiement> findByReservationIdOrderByPaymentDateDesc(@Param("reservationId") Long reservationId);
     
     List<Paiement> findByAdminIdAndStatus(Long adminId, Paiement.PaymentStatus status);
     

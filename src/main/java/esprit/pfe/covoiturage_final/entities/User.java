@@ -109,7 +109,7 @@ public class User implements UserDetails {
         return isActive;
     }
     
-    // Computed status field for frontend display
+    // Computed status field for frontend display (active/inactive/suspended status)
     @JsonProperty("status")
     public String getStatus() {
         if (suspensionEndDate != null && suspensionEndDate.isAfter(LocalDateTime.now())) {
@@ -118,10 +118,13 @@ public class User implements UserDetails {
         if (isActive == null || !isActive) {
             return "INACTIVE";
         }
-        if (isVerified == null || !isVerified) {
-            return "UNVERIFIED";
-        }
         return "ACTIVE";
+    }
+    
+    // Explicit getter for isVerified to ensure it's serialized
+    @JsonProperty("isVerified")
+    public Boolean getIsVerified() {
+        return isVerified;
     }
     
     // Computed full name for frontend display

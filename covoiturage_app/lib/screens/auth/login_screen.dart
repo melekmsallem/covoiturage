@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
+import '../../services/api_service.dart';
+import '../../widgets/company_logo.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -12,6 +15,7 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _scaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _authService = AuthService();
@@ -28,6 +32,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
 
+    if (!mounted) return;
+    
     setState(() => _isLoading = true);
 
     try {
@@ -36,28 +42,81 @@ class _LoginScreenState extends State<LoginScreen> {
         _passwordController.text,
       );
 
+      if (!mounted) return;
+      
+      final authProvider = context.read<AuthProvider>();
+      await authProvider.login(response['token'], response);
+      
+      // Check if driver needs verification
+      if (mounted && response['role'] == 'CONDUCTEUR') {
+        try {
+          final apiService = ApiService.instance;
+          final verificationStatus = await apiService.get('/users/verification-status');
+          // Only navigate to verification if account is not verified
+          if (verificationStatus['needsVerification'] == true && 
+              verificationStatus['isVerified'] != true) {
+            // Navigate to verification screen
+            Navigator.pushReplacementNamed(context, '/driver-verification');
+            return;
+          }
+        } catch (e) {
+          // If check fails, proceed to home
+          debugPrint('Failed to check verification status: $e');
+        }
+      }
+      
+      // Navigate to home screen after successful login
+      // Don't show SnackBar here as navigation will dispose the widget
       if (mounted) {
-        final authProvider = context.read<AuthProvider>();
-        await authProvider.login(response['token'], response);
-        
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Login successful!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-        
-        // Navigate to home screen after successful login
         Navigator.pushReplacementNamed(context, '/home');
       }
     } catch (e) {
+      if (!mounted) return;
+      
+      // Extract more meaningful error message
+      String errorMessage = 'Login failed';
+      final errorString = e.toString();
+      
+      if (errorString.contains('Failed to sign in:')) {
+        // Try to extract the backend error message
+        final match = RegExp(r'Failed to sign in: (.+)').firstMatch(errorString);
+        if (match != null) {
+          try {
+            final errorBody = jsonDecode(match.group(1)!);
+            errorMessage = errorBody is Map 
+                ? (errorBody['message'] ?? errorBody.toString())
+                : errorBody.toString();
+          } catch (_) {
+            errorMessage = match.group(1) ?? 'Invalid credentials';
+          }
+        }
+      } else if (errorString.contains('Network error')) {
+        errorMessage = 'Network error: Please check your connection and ensure the backend server is running';
+      } else if (errorString.contains('Invalid credentials') || errorString.contains('User not found')) {
+        errorMessage = 'Invalid username/email or password';
+      } else {
+        errorMessage = errorString.replaceFirst('Exception: ', '');
+      }
+      
+      // Show error message using scaffold messenger key (safe even if context is disposed)
+      // Use a post-frame callback to ensure widget tree is stable
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Login failed: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _scaffoldMessengerKey.currentState != null) {
+            try {
+              _scaffoldMessengerKey.currentState!.showSnackBar(
+                SnackBar(
+                  content: Text(errorMessage),
+                  backgroundColor: Colors.red,
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            } catch (_) {
+              // Ignore if messenger is invalid
+              debugPrint('Cannot show SnackBar: messenger invalid');
+            }
+          }
+        });
       }
     } finally {
       if (mounted) {
@@ -70,7 +129,9 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     
-    return Scaffold(
+    return ScaffoldMessenger(
+      key: _scaffoldMessengerKey,
+      child: Scaffold(
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
@@ -85,7 +146,12 @@ class _LoginScreenState extends State<LoginScreen> {
         child: SafeArea(
           child: Center(
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24.0),
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
               child: Card(
                 elevation: 8,
                 shape: RoundedRectangleBorder(
@@ -98,20 +164,13 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Logo/Icon with modern design
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: colorScheme.primaryContainer.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Icon(
-                            Icons.car_rental,
-                            size: 60,
-                            color: colorScheme.primary,
-                          ),
+                        // Company Logo
+                        const CompanyLogo(
+                          size: 180,
+                          showTagline: true,
+                          tagline: 'Your Journey, Connected',
                         ),
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 32),
                         
                         // Title with better typography
                         Text(
@@ -232,18 +291,21 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 24),
 
                         // Sign Up Link
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        Wrap(
+                          alignment: WrapAlignment.center,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 4,
                           children: [
                             Text(
-                              "Don't have an account? ",
+                              "Don't have an account?",
                               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                 color: colorScheme.onSurface.withOpacity(0.7),
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                             TextButton(
                               onPressed: () {
-                                Navigator.pushNamed(context, '/signup');
+                                Navigator.pushNamed(context, '/role-select');
                               },
                               style: TextButton.styleFrom(
                                 foregroundColor: colorScheme.primary,
@@ -267,6 +329,7 @@ class _LoginScreenState extends State<LoginScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

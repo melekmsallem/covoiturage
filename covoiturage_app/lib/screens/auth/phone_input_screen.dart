@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../../services/api_service.dart';
 // import removed
 import 'phone_verification_screen.dart';
 import 'personal_info_screen.dart';
@@ -64,7 +66,12 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return Scaffold(
-      appBar: AppBar(title: const Text('Your Phone Number')),
+      appBar: AppBar(
+        title: GestureDetector(
+          onLongPress: _showBackendUrlDialog,
+          child: const Text('Your Phone Number'),
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Form(
@@ -84,7 +91,8 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
               const SizedBox(height: 20),
               Row(
                 children: [
-                  Container(
+                  Flexible(
+                    child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: BoxDecoration(
                       border: Border.all(color: colorScheme.outline.withOpacity(0.3)),
@@ -94,6 +102,7 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<String>(
                         value: _selectedDialCode,
+                        isDense: true,
                         items: _countries.map((c) {
                           final label = "${c['flag']}  ${c['code']}";
                           return DropdownMenuItem<String>(
@@ -104,7 +113,7 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
                         onChanged: (v) => setState(() => _selectedDialCode = v ?? '+216'),
                       ),
                     ),
-                  ),
+                  )),
                   const SizedBox(width: 8),
                   Expanded(
                     child: TextFormField(
@@ -139,6 +148,52 @@ class _PhoneInputScreenState extends State<PhoneInputScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  Future<void> _showBackendUrlDialog() async {
+    final prefs = await SharedPreferences.getInstance();
+    final current = prefs.getString('api_base_override') ?? '';
+    final controller = TextEditingController(text: current);
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Set Backend URL (Override)'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              hintText: 'e.g. http://192.168.43.120:8081/api',
+              labelText: 'API Base URL',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () async {
+                final value = controller.text.trim();
+                if (value.isEmpty) {
+                  await prefs.remove('api_base_override');
+                } else {
+                  await prefs.setString('api_base_override', value);
+                }
+                ApiService.resetBaseUrl();
+                if (mounted) Navigator.pop(ctx);
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Backend URL updated. Will re-detect on next request.')),
+                  );
+                }
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

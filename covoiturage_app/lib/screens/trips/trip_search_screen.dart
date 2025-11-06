@@ -40,39 +40,28 @@ class _TripSearchScreenState extends State<TripSearchScreen> {
 
   Future<void> _loadCities() async {
     try {
-      // Simulate API call with mock cities data
-      await Future.delayed(const Duration(seconds: 1));
+      print('DEBUG: Loading cities from API...');
       
-      // Create mock cities data for Tunisia
-      final mockCities = [
-        {'id': 1, 'name': 'Tunis', 'region': 'Tunis'},
-        {'id': 2, 'name': 'Sfax', 'region': 'Sfax'},
-        {'id': 3, 'name': 'Sousse', 'region': 'Sousse'},
-        {'id': 4, 'name': 'Kairouan', 'region': 'Kairouan'},
-        {'id': 5, 'name': 'Bizerte', 'region': 'Bizerte'},
-        {'id': 6, 'name': 'Gabès', 'region': 'Gabès'},
-        {'id': 7, 'name': 'Ariana', 'region': 'Ariana'},
-        {'id': 8, 'name': 'Ben Arous', 'region': 'Ben Arous'},
-        {'id': 9, 'name': 'Monastir', 'region': 'Monastir'},
-        {'id': 10, 'name': 'Nabeul', 'region': 'Nabeul'},
-        {'id': 11, 'name': 'Kasserine', 'region': 'Kasserine'},
-        {'id': 12, 'name': 'Gafsa', 'region': 'Gafsa'},
-        {'id': 13, 'name': 'Tozeur', 'region': 'Tozeur'},
-        {'id': 14, 'name': 'Béja', 'region': 'Béja'},
-        {'id': 15, 'name': 'Jendouba', 'region': 'Jendouba'},
-        {'id': 16, 'name': 'Kef', 'region': 'Kef'},
-        {'id': 17, 'name': 'Siliana', 'region': 'Siliana'},
-        {'id': 18, 'name': 'Mahdia', 'region': 'Mahdia'},
-        {'id': 19, 'name': 'Tataouine', 'region': 'Tataouine'},
-        {'id': 20, 'name': 'Medenine', 'region': 'Medenine'},
-      ];
+      // Load cities from real API
+      final citiesResponse = await ApiService.instance.getDynamic('/cities');
+      print('DEBUG: Cities response: $citiesResponse');
+      
+      List<dynamic> citiesList = [];
+      if (citiesResponse is List) {
+        citiesList = citiesResponse;
+      } else if (citiesResponse is Map && citiesResponse.containsKey('data')) {
+        citiesList = citiesResponse['data'] as List<dynamic>? ?? [];
+      }
+      
+      print('DEBUG: Loaded ${citiesList.length} cities');
       
       if (!mounted) return;
       setState(() {
-        _allCities = mockCities;
+        _allCities = citiesList.cast<Map<String, dynamic>>();
         _loadingCities = false;
       });
-    } catch (_) {
+    } catch (e) {
+      print('DEBUG: Error loading cities: $e');
       if (!mounted) return;
       setState(() => _loadingCities = false);
     }
@@ -111,57 +100,50 @@ class _TripSearchScreenState extends State<TripSearchScreen> {
   }
 
   Future<void> _runSearch() async {
+    if (_departureController.text.trim().isEmpty || _arrivalController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select both departure and arrival cities')),
+      );
+      return;
+    }
+
     setState(() => _searching = true);
     try {
-      // Simulate API call with mock search results
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Create mock search results
-      final mockResults = {
-        'content': [
-          {
-            'id': 1,
-            'driverName': 'Ahmed Ben Ali',
-            'driverPhone': '+216 98 123 456',
-            'departureCity': _departureController.text.trim(),
-            'arrivalCity': _arrivalController.text.trim(),
-            'departureTime': '2025-10-17T08:00:00',
-            'arrivalTime': '2025-10-17T10:30:00',
-            'price': 5.0,
-            'availableSeats': 3,
-            'totalSeats': 4,
-            'vehicleModel': 'Peugeot 208',
-            'vehicleColor': 'Blanc',
-            'vehiclePlate': '123 TU 456',
-            'rating': 4.5,
-            'description': 'Trajet confortable avec climatisation',
-          },
-          {
-            'id': 2,
-            'driverName': 'Fatma Khelil',
-            'driverPhone': '+216 95 789 012',
-            'departureCity': _departureController.text.trim(),
-            'arrivalCity': _arrivalController.text.trim(),
-            'departureTime': '2025-10-17T14:00:00',
-            'arrivalTime': '2025-10-17T16:30:00',
-            'price': 4.5,
-            'availableSeats': 2,
-            'totalSeats': 3,
-            'vehicleModel': 'Renault Clio',
-            'vehicleColor': 'Rouge',
-            'vehiclePlate': '456 SF 789',
-            'rating': 4.8,
-            'description': 'Conductrice expérimentée, trajet direct',
-          },
-        ],
-        'totalElements': 2,
-        'totalPages': 1,
-        'size': 10,
-        'number': 0,
+      // Use real API call to search for trips
+      final searchParams = {
+        'departureCity': _departureController.text.trim(),
+        'arrivalCity': _arrivalController.text.trim(),
+        'departureDate': _dateController.text.trim().isNotEmpty ? _dateController.text.trim() : null,
+        'size': 20,
+        'page': 0,
       };
       
+      print('DEBUG: Searching with params: $searchParams');
+      final results = await _tripService.searchTrips(searchParams);
+      print('DEBUG: Search results type: ${results.runtimeType}');
+      print('DEBUG: Search results: $results');
+      
+      // Check if results is null or empty
+      if (results == null) {
+        print('DEBUG: Results is null');
+      } else if (results is Map) {
+        print('DEBUG: Results is Map with keys: ${results.keys}');
+      } else if (results is List) {
+        print('DEBUG: Results is List with ${results.length} items');
+      }
+      
       if (!mounted) return;
-      setState(() => _results = mockResults);
+      
+      // If results are empty or null, show a message but don't crash
+      if (results == null || 
+          (results is Map && results.isEmpty) ||
+          (results is Map && !results.containsKey('data') && !results.containsKey('content')) ||
+          (results is List && results.isEmpty)) {
+        print('DEBUG: No results found, showing empty state');
+        setState(() => _results = {'data': []});
+      } else {
+        setState(() => _results = results);
+      }
     } catch (e) {
       if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -320,7 +302,7 @@ class _TripSearchScreenState extends State<TripSearchScreen> {
               ),
             ),
             const SizedBox(height: 16),
-                Expanded(
+            Expanded(
               child: _results == null
                   ? const SizedBox.shrink()
                   : _SearchResults(data: _results!),
@@ -383,9 +365,46 @@ class _SearchResults extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
-    final items = (data['data'] as List?) ?? [];
+    print('DEBUG: SearchResults data structure: $data');
     
-    if (items.isEmpty) {
+    // Try different possible data structures
+    List<dynamic> items = [];
+    if (data.containsKey('data')) {
+      items = (data['data'] as List?) ?? [];
+    } else if (data.containsKey('content')) {
+      items = (data['content'] as List?) ?? [];
+    } else {
+      items = [];
+    }
+    
+    print('DEBUG: Extracted items: $items');
+    
+    // Filter to show only future trips
+    final now = DateTime.now();
+    final futureItems = items.where((trip) {
+      try {
+        final departureTimeString = trip['departureTime'] as String? ?? '';
+        if (departureTimeString.isEmpty) {
+          return false; // Skip trips without departure time
+        }
+        
+        final departureTime = DateTime.parse(departureTimeString);
+        final isFuture = departureTime.isAfter(now);
+        
+        if (!isFuture) {
+          print('DEBUG: Filtering out past trip: ${trip['departureTime']}');
+        }
+        
+        return isFuture;
+      } catch (e) {
+        print('DEBUG: Error parsing trip date: $e for trip: $trip');
+        return false; // Skip trips with invalid dates
+      }
+    }).toList();
+    
+    print('DEBUG: Future trips count: ${futureItems.length} out of ${items.length} total');
+    
+    if (futureItems.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -397,17 +416,18 @@ class _SearchResults extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              'No trips found',
+              'No upcoming trips found',
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                 color: colorScheme.onSurface.withOpacity(0.7),
               ),
             ),
             const SizedBox(height: 8),
             Text(
-              'Try adjusting your search criteria',
+              'No trips are available for the selected route\nTry different dates or destinations',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: colorScheme.onSurface.withOpacity(0.5),
               ),
+              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -415,15 +435,22 @@ class _SearchResults extends StatelessWidget {
     }
     
     return ListView.separated(
-      itemCount: items.length,
+      itemCount: futureItems.length,
       separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
-        final t = items[index] as Map<String, dynamic>;
+        final t = futureItems[index] as Map<String, dynamic>;
         final dep = t['departureCity'] ?? 'Unknown';
         final arr = t['arrivalCity'] ?? 'Unknown';
         final time = t['departureTime']?.toString() ?? '';
         final price = t['pricePerSeat']?.toString() ?? '';
         final availableSeats = t['availableSeats'] ?? 0;
+        
+        // Extract driver information
+        final driver = t['driver'] as Map<String, dynamic>?;
+        final driverName = driver != null 
+            ? '${driver['firstName'] ?? ''} ${driver['lastName'] ?? ''}'.trim()
+            : 'Unknown Driver';
+        final driverRating = (driver?['rating'] as num?)?.toDouble() ?? 0.0;
         
         return Card(
           elevation: 2,
@@ -491,6 +518,52 @@ class _SearchResults extends StatelessWidget {
                             ),
                           ],
                         ),
+                        const SizedBox(height: 4),
+                        // Driver name and rating
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.person,
+                              size: 14,
+                              color: colorScheme.onSurface.withOpacity(0.6),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              driverName,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: colorScheme.onSurface.withOpacity(0.8),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            // Add verification badge if driver is verified
+                            if (driver != null && (driver['isVerified'] == true || driver['isVerified'] == 'true')) ...[
+                              const SizedBox(width: 6),
+                              Icon(
+                                Icons.verified,
+                                size: 16,
+                                color: Colors.green.shade700,
+                              ),
+                            ],
+                            if (driverRating > 0) ...[
+                              const SizedBox(width: 8),
+                              Icon(
+                                Icons.star,
+                                size: 14,
+                                color: Colors.amber[600],
+                              ),
+                              const SizedBox(width: 2),
+                              Text(
+                                driverRating.toStringAsFixed(1),
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Colors.amber[700],
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        _buildPickupModeInfo(t),
                       ],
                     ),
                   ),
@@ -498,7 +571,7 @@ class _SearchResults extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '$price TND',
+                        '$price coins',
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           fontWeight: FontWeight.bold,
                           color: colorScheme.primary,
@@ -519,5 +592,70 @@ class _SearchResults extends StatelessWidget {
         );
       },
     );
+  }
+
+  Widget _buildPickupModeInfo(Map<String, dynamic> trip) {
+    final pickupMode = trip['pickupMode'] as String?;
+    final hasPickupPoints = trip['pickupPoints'] != null && 
+                           (trip['pickupPoints'] as List).isNotEmpty;
+    
+    if (pickupMode == 'DESIGNATED_POINT' && hasPickupPoints) {
+      return Row(
+        children: [
+          Icon(
+            Icons.location_on,
+            size: 14,
+            color: Colors.blue.shade600,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Designated pickup points',
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.blue,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    } else if (pickupMode == 'INDIVIDUAL_PICKUP') {
+      return Row(
+        children: [
+          Icon(
+            Icons.my_location,
+            size: 14,
+            color: Colors.green.shade600,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Individual pickup (share location)',
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.green,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    } else {
+      // Default or unknown pickup mode
+      return Row(
+        children: [
+          Icon(
+            Icons.help_outline,
+            size: 14,
+            color: Colors.grey.shade600,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Pickup details available in trip',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ],
+      );
+    }
   }
 }

@@ -15,12 +15,12 @@ class PhoneVerificationService {
     Function()? onAutoVerified,
   }) async {
     try {
-      // For web, we need to handle reCAPTCHA
+      // For web, Firebase phone auth is not supported
       if (kIsWeb) {
-        // Use a mock verification for web development
-        print('Web phone verification - using mock for development');
+        // Use development verification for web testing
+        print('Web phone verification - using development mode');
         await Future.delayed(const Duration(seconds: 2));
-        _verificationId = 'mock_verification_id_${DateTime.now().millisecondsSinceEpoch}';
+        _verificationId = 'web_dev_verification_${DateTime.now().millisecondsSinceEpoch}';
         onCodeSent(_verificationId!);
         return;
       }

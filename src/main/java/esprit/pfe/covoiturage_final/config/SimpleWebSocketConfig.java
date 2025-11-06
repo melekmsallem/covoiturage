@@ -1,5 +1,6 @@
 package esprit.pfe.covoiturage_final.config;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
 import org.springframework.web.socket.config.annotation.WebSocketConfigurer;
@@ -28,6 +29,8 @@ public class SimpleWebSocketConfig implements WebSocketConfigurer {
 
     public static class SimpleWebSocketHandler implements WebSocketHandler {
 
+        private static final ObjectMapper objectMapper = new ObjectMapper();
+
         @Override
         public void afterConnectionEstablished(WebSocketSession session) throws Exception {
             sessions.put(session.getId(), session);
@@ -40,21 +43,61 @@ public class SimpleWebSocketConfig implements WebSocketConfigurer {
             welcomeMessage.put("timestamp", LocalDateTime.now().toString());
             welcomeMessage.put("sessionId", session.getId());
             
-            session.sendMessage(new TextMessage(welcomeMessage.toString()));
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(welcomeMessage)));
         }
 
         @Override
         public void handleMessage(WebSocketSession session, org.springframework.web.socket.WebSocketMessage<?> message) throws Exception {
             System.out.println("WebSocket message received: " + message.getPayload());
             
-            // Echo back the message with timestamp
-            Map<String, Object> response = new HashMap<>();
-            response.put("type", "echo");
-            response.put("originalMessage", message.getPayload());
-            response.put("timestamp", LocalDateTime.now().toString());
-            response.put("sessionId", session.getId());
-            
-            session.sendMessage(new TextMessage(response.toString()));
+            try {
+                String payload = message.getPayload().toString();
+                
+                // Try to parse as JSON
+                Map<String, Object> receivedMessage = objectMapper.readValue(payload, objectMapper.getTypeFactory().constructMapType(Map.class, String.class, Object.class));
+                
+                // Check if it's a location update
+                if ("location-update".equals(receivedMessage.get("type")) || 
+                    receivedMessage.containsKey("userId") && receivedMessage.containsKey("latitude")) {
+                    
+                    // Broadcast location update to all other sessions
+                    receivedMessage.put("type", "location-update");
+                    receivedMessage.put("timestamp", LocalDateTime.now().toString());
+                    
+                    String jsonMessage = objectMapper.writeValueAsString(receivedMessage);
+                    
+                    // Broadcast to all other sessions
+                    sessions.values().forEach(s -> {
+                        try {
+                            if (s.isOpen() && !s.getId().equals(session.getId())) {
+                                s.sendMessage(new TextMessage(jsonMessage));
+                            }
+                        } catch (IOException e) {
+                            System.err.println("Error broadcasting to session: " + e.getMessage());
+                        }
+                    });
+                    
+                    System.out.println("Broadcasted location update from user " + receivedMessage.get("userId"));
+                } else {
+                    // Echo back the message with timestamp
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("type", "echo");
+                    response.put("originalMessage", receivedMessage);
+                    response.put("timestamp", LocalDateTime.now().toString());
+                    response.put("sessionId", session.getId());
+                    
+                    session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+                }
+            } catch (Exception e) {
+                // Not JSON, handle as text
+                System.out.println("Handling non-JSON message");
+                Map<String, Object> response = new HashMap<>();
+                response.put("type", "echo");
+                response.put("message", message.getPayload());
+                response.put("timestamp", LocalDateTime.now().toString());
+                
+                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(response)));
+            }
         }
 
         @Override
@@ -77,16 +120,21 @@ public class SimpleWebSocketConfig implements WebSocketConfigurer {
 
     // Utility method to broadcast messages to all connected sessions
     public static void broadcastMessage(Map<String, Object> message) {
-        TextMessage textMessage = new TextMessage(message.toString());
-        sessions.values().forEach(session -> {
-            try {
-                if (session.isOpen()) {
-                    session.sendMessage(textMessage);
+        try {
+            String jsonMessage = new ObjectMapper().writeValueAsString(message);
+            TextMessage textMessage = new TextMessage(jsonMessage);
+            sessions.values().forEach(session -> {
+                try {
+                    if (session.isOpen()) {
+                        session.sendMessage(textMessage);
+                    }
+                } catch (IOException e) {
+                    System.err.println("Error broadcasting message: " + e.getMessage());
                 }
-            } catch (IOException e) {
-                System.err.println("Error broadcasting message: " + e.getMessage());
-            }
-        });
+            });
+        } catch (Exception e) {
+            System.err.println("Error serializing broadcast message: " + e.getMessage());
+        }
     }
 }
 

@@ -97,7 +97,7 @@ class TripService {
         return response;
       }
       // Fallback if still returning array
-      return {'data': response as List<dynamic>, 'page': 0, 'totalPages': 1, 'totalElements': (response as List).length};
+      return {'data': response, 'page': 0, 'totalPages': 1, 'totalElements': (response as List).length};
     } catch (e) {
       throw Exception('Failed to get bookings: $e');
     }
@@ -157,6 +157,16 @@ class TripService {
     }
   }
 
+  /// Create a new trip (driver only)
+  Future<Map<String, dynamic>> createTrip(Map<String, dynamic> tripData) async {
+    try {
+      final response = await _apiService.post('/trip-creation/create', tripData);
+      return response;
+    } catch (e) {
+      throw Exception('Failed to create trip: $e');
+    }
+  }
+
   /// Get trip bookings (driver only)
   Future<List<dynamic>> getTripBookings(int tripId) async {
     try {
@@ -180,6 +190,7 @@ class TripService {
       throw Exception('Failed to confirm booking: $e');
     }
   }
+
 
   /// Decline a booking (driver only)
   Future<Map<String, dynamic>> declineBooking(int bookingId) async {
@@ -205,14 +216,49 @@ class TripService {
     }
   }
 
+  /// Set passenger pickup point for individual pickup trips
+  Future<Map<String, dynamic>> setPickupPoint({
+    required int bookingId,
+    required String address,
+    required double latitude,
+    required double longitude,
+  }) async {
+    try {
+      final response = await _apiService.post('/bookings/$bookingId/pickup-point', {
+        'address': address,
+        'latitude': latitude,
+        'longitude': longitude,
+      });
+      return response;
+    } catch (e) {
+      throw Exception('Failed to set pickup point: $e');
+    }
+  }
+
+  /// Get trip pickup points (only for confirmed bookings or driver)
+  Future<List<dynamic>> getTripPickupPoints(int tripId) async {
+    try {
+      final response = await _apiService.getDynamic('/bookings/trip/$tripId/pickup-points');
+      return response as List<dynamic>;
+    } catch (e) {
+      throw Exception('Failed to get pickup points: $e');
+    }
+  }
+
   /// Helper method to format booking request
   Map<String, dynamic> formatBookingRequest({
     required int numberOfSeats,
     String? notes,
+    Map<String, dynamic>? pickupPoint,
   }) {
     return {
       'numberOfSeats': numberOfSeats,
       if (notes != null && notes.isNotEmpty) 'notes': notes,
+      if (pickupPoint != null) ...{
+        'pickupAddress': pickupPoint['address'],
+        'pickupLatitude': pickupPoint['latitude'],
+        'pickupLongitude': pickupPoint['longitude'],
+      },
     };
   }
 }

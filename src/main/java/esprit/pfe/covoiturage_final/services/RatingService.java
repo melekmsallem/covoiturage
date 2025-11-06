@@ -21,6 +21,7 @@ public interface RatingService {
     List<Avis> getRatingsByTrip(Long tripId);
     List<Avis> getVisibleRatingsByUser(Long userId);
     List<Avis> getVisibleRatingsByTrip(Long tripId);
+    List<Avis> getRatingsSubmittedByUser(Long userId); // Ratings submitted BY the user (not about the user)
     List<Avis> getRatingsByRating(Integer rating);
     List<Avis> getRatingsByRatingRange(Integer minRating, Integer maxRating);
     

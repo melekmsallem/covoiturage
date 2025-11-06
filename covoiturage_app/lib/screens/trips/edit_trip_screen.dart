@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/trip_creation_service.dart';
 import '../../services/trip_service.dart';
+import '../../widgets/simple_location_picker_widget.dart';
 
 class EditTripScreen extends StatefulWidget {
   final int tripId;
@@ -38,6 +39,16 @@ class _EditTripScreenState extends State<EditTripScreen> {
   bool _isLoading = false;
   bool _isSaving = false;
   Map<String, dynamic>? _tripData;
+  
+  // Pickup mode variables
+  String? _selectedPickupMode;
+  List<Map<String, dynamic>> _pickupPoints = [];
+  bool _allowLocationSharing = true;
+  bool _flexiblePickupTimes = true;
+  
+  // GPS coordinates for departure and arrival
+  Map<String, dynamic>? _departurePoint;
+  Map<String, dynamic>? _arrivalPoint;
   
   // Validation errors
   String? _priceError;
@@ -117,6 +128,16 @@ class _EditTripScreenState extends State<EditTripScreen> {
     if (_tripData!['arrivalCity'] != null) {
       _selectedArrivalCity = {'name': _tripData!['arrivalCity']};
     }
+
+    // Set pickup mode data
+    _selectedPickupMode = _tripData!['pickupMode'];
+    _pickupPoints = List<Map<String, dynamic>>.from(_tripData!['pickupPoints'] ?? []);
+    _allowLocationSharing = _tripData!['allowLocationSharing'] ?? true;
+    _flexiblePickupTimes = _tripData!['flexiblePickupTimes'] ?? true;
+    
+    // Set GPS coordinates
+    _departurePoint = _tripData!['departurePoint'];
+    _arrivalPoint = _tripData!['arrivalPoint'];
   }
 
   Future<void> _loadFormData() async {
@@ -254,6 +275,33 @@ class _EditTripScreenState extends State<EditTripScreen> {
     });
 
     try {
+      // Create pickup points list - include departure point as first pickup point
+      List<Map<String, dynamic>> finalPickupPoints = [];
+      if (_selectedPickupMode == 'DESIGNATED_POINT') {
+        // Add departure point as the first pickup point
+        if (_departurePoint != null) {
+          finalPickupPoints.add({
+            'address': _departurePoint!['address'],
+            'latitude': _departurePoint!['latitude'],
+            'longitude': _departurePoint!['longitude'],
+            'pickupTime': _departureTime!.toIso8601String(),
+            'maxWaitingTime': 10, // 10 minutes default
+            'pickupOrder': 1,
+          });
+        }
+        // Add other designated pickup points
+        for (int i = 0; i < _pickupPoints.length; i++) {
+          finalPickupPoints.add({
+            'address': _pickupPoints[i]['address'],
+            'latitude': _pickupPoints[i]['latitude'],
+            'longitude': _pickupPoints[i]['longitude'],
+            'pickupTime': _pickupPoints[i]['pickupTime'] ?? _departureTime!.toIso8601String(),
+            'maxWaitingTime': _pickupPoints[i]['maxWaitingTime'] ?? 10,
+            'pickupOrder': i + 2, // Start from 2 since departure is 1
+          });
+        }
+      }
+
       final request = {
         'departureTime': _departureTime!.toIso8601String(),
         'arrivalTime': _arrivalTime!.toIso8601String(),
@@ -263,14 +311,18 @@ class _EditTripScreenState extends State<EditTripScreen> {
         'departureCity': _selectedDepartureCity!['name'],
         'arrivalCity': _selectedArrivalCity!['name'],
         'options': _selectedOptions,
+        'pickupMode': _selectedPickupMode,
+        'pickupPoints': _selectedPickupMode == 'DESIGNATED_POINT' ? finalPickupPoints : null,
+        'allowLocationSharing': _allowLocationSharing,
+        'flexiblePickupTimes': _flexiblePickupTimes,
+        // Add GPS coordinates - departure is always required, arrival is optional
+        if (_departurePoint != null) 'departurePoint': _departurePoint,
+        if (_arrivalPoint != null) 'arrivalPoint': _arrivalPoint,
       };
 
       await _tripService.updateTrip(widget.tripId, request);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Trip updated successfully!')),
-        );
         Navigator.of(context).pop(true); // Return true to indicate success
       }
     } catch (e) {
@@ -399,7 +451,7 @@ class _EditTripScreenState extends State<EditTripScreen> {
                   
                   return CheckboxListTile(
                     title: Text(option['name']),
-                    subtitle: Text('${option['price']} TND'),
+                    subtitle: Text('${option['price']} coins'),
                     value: isSelected,
                     onChanged: (value) {
                       setState(() {
@@ -640,7 +692,7 @@ class _EditTripScreenState extends State<EditTripScreen> {
 
               // Price per Seat
               const Text(
-                'Price per Seat (TND)',
+                'Price per Seat (coins)',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 8),
@@ -731,6 +783,11 @@ class _EditTripScreenState extends State<EditTripScreen> {
               ),
               const SizedBox(height: 24),
 
+              // Pickup Mode Section
+              _buildPickupModeSection(),
+
+              const SizedBox(height: 24),
+
               // Save Button
               SizedBox(
                 width: double.infinity,
@@ -762,6 +819,435 @@ class _EditTripScreenState extends State<EditTripScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildPickupModeSection() {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.location_on, color: Colors.blue[600], size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Pickup Mode',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            // Pickup Mode Selection
+            Row(
+              children: [
+                Expanded(
+                  child: RadioListTile<String>(
+                    title: const Text('Designated Points'),
+                    subtitle: const Text('Set specific pickup locations'),
+                    value: 'DESIGNATED_POINT',
+                    groupValue: _selectedPickupMode,
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedPickupMode = value;
+                      });
+                    },
+                    activeColor: Colors.blue,
+                  ),
+                ),
+                Expanded(
+                  child: RadioListTile<String>(
+                    title: const Text('Individual Pickup'),
+                    subtitle: const Text('Passengers share location'),
+                    value: 'INDIVIDUAL_PICKUP',
+                    groupValue: _selectedPickupMode,
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedPickupMode = value;
+                      });
+                    },
+                    activeColor: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+            
+            // GPS Coordinate Selection for Departure
+            if (_selectedPickupMode == 'DESIGNATED_POINT') ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Departure Point (Required)',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SimpleLocationPickerWidget(
+                              title: 'Select Departure Point',
+                              onLocationSelected: _setDeparturePoint,
+                              initialLocation: _departurePoint,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.my_location),
+                      label: Text(_departurePoint != null 
+                          ? 'Update Departure Point' 
+                          : 'Set Departure Point'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade50,
+                        foregroundColor: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_departurePoint != null)
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _departurePoint = null;
+                        });
+                      },
+                      icon: const Icon(Icons.clear, color: Colors.red),
+                      tooltip: 'Clear departure point',
+                    ),
+                ],
+              ),
+              if (_departurePoint != null)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.location_on, color: Colors.blue.shade600, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${_departurePoint!['address'] ?? 'Selected location'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+            
+            // GPS Coordinate Selection for Arrival (Optional)
+            if (_selectedPickupMode == 'DESIGNATED_POINT' && _selectedArrivalCity != null) ...[
+              const SizedBox(height: 16),
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange.shade600, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Arrival point is optional. If not set, passengers will be dropped off anywhere in ${_selectedArrivalCity!['name']}.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SimpleLocationPickerWidget(
+                              title: 'Select Arrival Point (Optional)',
+                              onLocationSelected: _setArrivalPoint,
+                              initialLocation: _arrivalPoint,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.my_location),
+                      label: Text(_arrivalPoint != null 
+                          ? 'Update Arrival Point' 
+                          : 'Set Arrival Point (Optional)'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade50,
+                        foregroundColor: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_arrivalPoint != null)
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _arrivalPoint = null;
+                        });
+                      },
+                      icon: const Icon(Icons.clear, color: Colors.red),
+                      tooltip: 'Clear arrival point',
+                    ),
+                ],
+              ),
+              if (_arrivalPoint != null)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.location_on, color: Colors.green.shade600, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${_arrivalPoint!['address'] ?? 'Selected location'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+            
+            // Individual Pickup Settings
+            if (_selectedPickupMode == 'INDIVIDUAL_PICKUP') ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Individual Pickup Settings',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                title: const Text('Allow Location Sharing'),
+                subtitle: const Text('Passengers can share their location with you'),
+                value: _allowLocationSharing,
+                onChanged: (value) {
+                  setState(() {
+                    _allowLocationSharing = value;
+                  });
+                },
+                activeColor: Colors.green,
+              ),
+              SwitchListTile(
+                title: const Text('Flexible Pickup Times'),
+                subtitle: const Text('Allow flexible pickup time windows'),
+                value: _flexiblePickupTimes,
+                onChanged: (value) {
+                  setState(() {
+                    _flexiblePickupTimes = value;
+                  });
+                },
+                activeColor: Colors.blue,
+              ),
+            ],
+            
+            // Designated Pickup Points Management
+            if (_selectedPickupMode == 'DESIGNATED_POINT') ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Pickup Points',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              
+              // Show departure point as first pickup point
+              if (_departurePoint != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: Colors.green,
+                        child: const Text('1', style: TextStyle(color: Colors.white)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Departure Point (Automatic)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              _departurePoint!['address'] ?? 'Selected location',
+                              style: TextStyle(
+                                color: Colors.green.shade600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.check_circle, color: Colors.green.shade600),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              
+              // Show additional pickup points
+              if (_pickupPoints.isNotEmpty) ...[
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: _pickupPoints.length,
+                  itemBuilder: (context, index) {
+                    return _buildPickupPointCard(index);
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+              
+              // Add pickup point button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _departurePoint != null ? _addPickupPoint : null,
+                  icon: const Icon(Icons.add_location),
+                  label: Text(_departurePoint != null 
+                      ? 'Add Additional Pickup Point' 
+                      : 'Set Departure Point First'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _departurePoint != null ? Colors.blue : Colors.grey,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _setDeparturePoint(Map<String, dynamic> location) {
+    setState(() {
+      _departurePoint = location;
+    });
+  }
+
+  void _setArrivalPoint(Map<String, dynamic> location) {
+    setState(() {
+      _arrivalPoint = location;
+    });
+  }
+
+  void _addPickupPoint() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SimpleLocationPickerWidget(
+          title: 'Add Pickup Point',
+          onLocationSelected: (location) {
+            setState(() {
+              _pickupPoints.add({
+                'address': location['address'],
+                'latitude': location['latitude'],
+                'longitude': location['longitude'],
+                'pickupTime': _departureTime?.toIso8601String(),
+                'maxWaitingTime': 10,
+              });
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPickupPointCard(int index) {
+    final point = _pickupPoints[index];
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            backgroundColor: Colors.blue,
+            child: Text('${index + 2}'), // Start from 2 since departure is 1
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pickup Point ${index + 2}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.blue.shade700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  point['address'] ?? 'Selected location',
+                  style: TextStyle(
+                    color: Colors.blue.shade600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            onPressed: () {
+              setState(() {
+                _pickupPoints.removeAt(index);
+              });
+            },
+            icon: const Icon(Icons.delete, color: Colors.red),
+            tooltip: 'Remove pickup point',
+          ),
+        ],
       ),
     );
   }

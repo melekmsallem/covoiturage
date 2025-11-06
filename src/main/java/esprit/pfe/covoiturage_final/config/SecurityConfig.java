@@ -63,7 +63,7 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth ->
                 auth
-                    // Admin login page - MUST be first
+                    // Admin login page (explicit)
                     .requestMatchers("/admin-login.html").permitAll()
                     
                     // Admin dashboard - temporarily allow access for debugging
@@ -75,6 +75,7 @@ public class SecurityConfig {
                     .requestMatchers("/js/**").permitAll()
                     .requestMatchers("/css/**").permitAll()
                     .requestMatchers("/images/**").permitAll()
+                    .requestMatchers("/static/**").permitAll()
                     .requestMatchers("/favicon.ico").permitAll()
                     
                     // Test pages
@@ -90,6 +91,10 @@ public class SecurityConfig {
                     .requestMatchers("/api/trip-creation/form-data").permitAll()
                     .requestMatchers("/api/trip-creation/validate").permitAll()
                     .requestMatchers("/api/trip-creation/estimate").permitAll()
+                    .requestMatchers("/api/trip-creation/debug-estimate").permitAll()
+                    .requestMatchers("/api/users/check-username/**").permitAll()
+                    .requestMatchers("/api/users/check-email/**").permitAll()
+                    .requestMatchers("/api/car-models/**").permitAll()
                     .requestMatchers("/api/test/**").permitAll()
                     .requestMatchers("/api/dashboard-test/**").permitAll()
                     .requestMatchers("/api/simple/**").permitAll()
@@ -105,12 +110,15 @@ public class SecurityConfig {
                     // Admin APIs - temporarily allow access for debugging
                     .requestMatchers("/api/admin/**").permitAll()
                     
+                    // File upload endpoints
+                    .requestMatchers("/api/files/**").permitAll()
+                    
                     // Migration APIs - allow access for database migration
                     .requestMatchers("/api/migration/**").permitAll()
 
                     // Protected APIs
                     .requestMatchers("/api/trip-creation/create").authenticated()
-                    .requestMatchers("/api/trip-creation/**").authenticated()
+                    // Note: Other trip-creation endpoints are handled above with permitAll()
                     // Dashboard: expose debug-auth only, protect the rest
                     .requestMatchers("/api/dashboard/debug-auth").permitAll()
                     .requestMatchers("/api/dashboard/**").authenticated()

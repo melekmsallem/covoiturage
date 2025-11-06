@@ -25,6 +25,8 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
     
     List<Reservation> findByVoyageIdAndStatus(Long voyageId, Reservation.ReservationStatus status);
     
+    List<Reservation> findByVoyageIdAndPassagerId(Long voyageId, Long passagerId);
+    
     @Query("SELECT COUNT(r) FROM Reservation r WHERE r.voyageId = :voyageId AND r.status = 'CONFIRMED'")
     Long countConfirmedReservationsByVoyageId(@Param("voyageId") Long voyageId);
     
@@ -33,4 +35,10 @@ public interface ReservationRepository extends JpaRepository<Reservation, Long> 
 
     @Modifying
     void deleteByVoyageIdIn(List<Long> voyageIds);
+    
+    @Query("SELECT r.passagerId, u.firstName, u.lastName " +
+           "FROM Reservation r " +
+           "JOIN User u ON r.passagerId = u.id " +
+           "WHERE r.voyageId = :voyageId AND r.status = 'CONFIRMED'")
+    List<Object[]> findPassengersForTrip(@Param("voyageId") Long voyageId);
 }

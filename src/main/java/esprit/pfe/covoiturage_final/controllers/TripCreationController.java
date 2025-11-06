@@ -27,9 +27,13 @@ public class TripCreationController {
     public ResponseEntity<?> createTrip(@Valid @RequestBody CreateTripRequest request) {
         try {
             Long driverId = getCurrentUserId();
+            System.out.println("DEBUG: Creating trip for driver ID: " + driverId);
             TripResponse response = tripService.createTrip(request, driverId);
+            System.out.println("DEBUG: Trip created successfully with ID: " + response.getId());
             return ResponseEntity.ok(response);
         } catch (RuntimeException e) {
+            System.out.println("DEBUG: Trip creation failed: " + e.getMessage());
+            e.printStackTrace();
             return ResponseEntity.badRequest().body(Map.of(
                 "error", true,
                 "message", e.getMessage()
@@ -84,9 +88,39 @@ public class TripCreationController {
     @PostMapping("/estimate")
     public ResponseEntity<?> estimateTrip(@RequestBody Map<String, Object> routeData) {
         try {
+            System.out.println("DEBUG: Trip estimation request: " + routeData);
             Map<String, Object> estimation = tripService.estimateTrip(routeData);
+            System.out.println("DEBUG: Trip estimation result: " + estimation);
             return ResponseEntity.ok(estimation);
         } catch (RuntimeException e) {
+            System.out.println("DEBUG: Trip estimation error: " + e.getMessage());
+            return ResponseEntity.badRequest().body(Map.of(
+                "error", true,
+                "message", e.getMessage()
+            ));
+        }
+    }
+    
+    /**
+     * Debug endpoint to test authentication
+     */
+    @PostMapping("/debug-estimate")
+    public ResponseEntity<?> debugEstimateTrip(@RequestBody Map<String, Object> routeData) {
+        try {
+            // Mock response with the expected structure for Flutter app
+            Map<String, Object> debugResponse = Map.of(
+                "distance", "120.5",
+                "durationFormatted", "2h 15min",
+                "estimatedFuelCost", "15.2",
+                "route", Map.of(
+                    "departure", routeData.getOrDefault("departureCity", "Unknown"),
+                    "arrival", routeData.getOrDefault("arrivalCity", "Unknown")
+                ),
+                "debug", true,
+                "message", "Debug estimation endpoint working - using mock data"
+            );
+            return ResponseEntity.ok(debugResponse);
+        } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of(
                 "error", true,
                 "message", e.getMessage()

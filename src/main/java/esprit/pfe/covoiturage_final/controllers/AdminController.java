@@ -2,7 +2,7 @@ package esprit.pfe.covoiturage_final.controllers;
 
 import esprit.pfe.covoiturage_final.dto.*;
 import esprit.pfe.covoiturage_final.entities.User;
-import esprit.pfe.covoiturage_final.services.AdminService;
+import esprit.pfe.covoiturage_final.services.AdminServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -24,7 +24,7 @@ import java.util.Map;
 public class AdminController {
     
     @Autowired
-    private AdminService adminService;
+    private AdminServiceImpl adminService;
     
     @Autowired
     private esprit.pfe.covoiturage_final.services.CsvExportService csvExportService;
@@ -204,6 +204,23 @@ public class AdminController {
             boolean deleted = adminService.deleteBooking(bookingId);
             if (deleted) {
                 return ResponseEntity.ok().body(Map.of("message", "Booking deleted successfully"));
+            } else {
+                return ResponseEntity.notFound().build();
+            }
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+    
+    /**
+     * Resolve a booking (Admin only) - PENDING -> CONFIRMED, CONFIRMED -> COMPLETED
+     */
+    @PutMapping("/bookings/{bookingId}/resolve")
+    public ResponseEntity<?> resolveBooking(@PathVariable Long bookingId) {
+        try {
+            boolean resolved = adminService.resolveBooking(bookingId);
+            if (resolved) {
+                return ResponseEntity.ok().body(Map.of("message", "Booking resolved successfully"));
             } else {
                 return ResponseEntity.notFound().build();
             }

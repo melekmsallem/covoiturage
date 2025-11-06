@@ -5,6 +5,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Table(name = "point_gps")
 @Data
@@ -27,12 +29,22 @@ public class Point_GPS {
     
     @Column(name = "point_type")
     @Enumerated(EnumType.STRING)
-    private PointType pointType; // START, END, INTERMEDIATE
+    private PointType pointType; // START, END, INTERMEDIATE, PICKUP
     
     @Column(name = "voyage_id", nullable = false)
     private Long voyageId;
     
+    // New fields for pickup points
+    @Column(name = "pickup_time")
+    private LocalDateTime pickupTime;
+    
+    @Column(name = "max_waiting_time")
+    private Integer maxWaitingTime; // in minutes
+    
+    @Column(name = "pickup_order")
+    private Integer pickupOrder; // for ordering pickup points
+    
     public enum PointType {
-        START, END, INTERMEDIATE
+        START, END, INTERMEDIATE, PICKUP
     }
 }

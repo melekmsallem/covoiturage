@@ -62,6 +62,47 @@ public class WebSocketController {
         response.put("timestamp", LocalDateTime.now().toString());
         return response;
     }
+
+    /**
+     * Handles real-time location updates from drivers or passengers
+     * Broadcasts to trip-specific topic so all participants can see each other
+     */
+    @MessageMapping("/location-update")
+    @SendTo("/topic/locations")
+    public Map<String, Object> locationUpdate(Map<String, Object> message) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("type", "location-update");
+        response.put("userId", message.get("userId"));
+        response.put("tripId", message.get("tripId"));
+        response.put("latitude", message.get("latitude"));
+        response.put("longitude", message.get("longitude"));
+        response.put("accuracy", message.get("accuracy"));
+        response.put("speed", message.get("speed"));
+        response.put("heading", message.get("heading"));
+        response.put("timestamp", LocalDateTime.now().toString());
+        return response;
+    }
+
+    /**
+     * Handles location updates for a specific trip
+     * Only participants of that trip will receive these updates
+     */
+    @MessageMapping("/location/trip/{tripId}")
+    @SendTo("/topic/locations/trip/{tripId}")
+    public Map<String, Object> tripLocationUpdate(Map<String, Object> message, String tripId) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("type", "location-update");
+        response.put("userId", message.get("userId"));
+        response.put("tripId", tripId);
+        response.put("userRole", message.get("userRole")); // "DRIVER" or "PASSENGER"
+        response.put("latitude", message.get("latitude"));
+        response.put("longitude", message.get("longitude"));
+        response.put("accuracy", message.get("accuracy"));
+        response.put("speed", message.get("speed"));
+        response.put("heading", message.get("heading"));
+        response.put("timestamp", LocalDateTime.now().toString());
+        return response;
+    }
 }
 
 

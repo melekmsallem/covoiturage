@@ -7,13 +7,16 @@ import esprit.pfe.covoiturage_final.entities.Passager;
 import esprit.pfe.covoiturage_final.repositories.AvisRepository;
 import esprit.pfe.covoiturage_final.repositories.UserRepository;
 import esprit.pfe.covoiturage_final.repositories.ReservationRepository;
+import esprit.pfe.covoiturage_final.repositories.VoyageRepository;
 import esprit.pfe.covoiturage_final.dto.RatingStatistics;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
-import java.util.Optional;
+import java.util.ArrayList;
+import esprit.pfe.covoiturage_final.entities.Voyage;
+import esprit.pfe.covoiturage_final.entities.Reservation;
 
 @Service
 @Transactional
@@ -31,9 +34,17 @@ public class RatingServiceImpl implements RatingService {
     @Autowired
     private NotificationService notificationService;
     
+    @Autowired
+    private VoyageRepository voyageRepository;
+    
     @Override
     public Avis createRating(Long userId, Long tripId, Integer rating, String comment) {
         return createRating(userId, tripId, rating, comment, null);
+    }
+    
+    // Public method with targetUserId - delegates to private method
+    public Avis createRatingWithTarget(Long userId, Long tripId, Integer rating, String comment, Long targetUserId) {
+        return createRating(userId, tripId, rating, comment, targetUserId);
     }
     
     private Avis createRating(Long userId, Long tripId, Integer rating, String comment, Long targetUserId) {
@@ -45,9 +56,12 @@ public class RatingServiceImpl implements RatingService {
             throw new RuntimeException("Comment cannot exceed 500 characters.");
         }
         
-        // Check if user has already rated this trip
-        if (hasUserRatedTrip(userId, tripId)) {
-            throw new RuntimeException("You have already rated this trip.");
+        // Disallow duplicate rating of the same target user for the same trip
+        Long finalTargetUserId = targetUserId != null ? targetUserId : getTripParticipantId(tripId, userId);
+        boolean alreadyRatedTargetForTrip = avisRepository.findByUserId(finalTargetUserId).stream()
+            .anyMatch(a -> tripId.equals(a.getVoyageId()));
+        if (alreadyRatedTargetForTrip) {
+            throw new RuntimeException("You have already rated this user for this trip.");
         }
         
         // Check if user can rate (must have participated in the trip)
@@ -56,16 +70,18 @@ public class RatingServiceImpl implements RatingService {
         }
         
         Avis avis = new Avis();
-        avis.setUserId(targetUserId != null ? targetUserId : getTripParticipantId(tripId, userId));
+        avis.setUserId(finalTargetUserId);
         avis.setVoyageId(tripId);
         avis.setRating(rating);
         avis.setComment(comment);
-        avis.setIsVisible(true);
+        // New ratings start as PENDING and should not be visible until approved
+        avis.setIsVisible(false);
+        avis.setStatus("PENDING");
         
         avis = avisRepository.save(avis);
         
         // Update user's average rating
-        updateUserRating(userRepository.findById(targetUserId != null ? targetUserId : getTripParticipantId(tripId, userId)).orElse(null));
+        updateUserRating(userRepository.findById(finalTargetUserId).orElse(null));
         
         // Send notification to rated user
         if (targetUserId != null) {
@@ -159,6 +175,57 @@ public class RatingServiceImpl implements RatingService {
     }
     
     @Override
+    public List<Avis> getRatingsSubmittedByUser(Long userId) {
+        // Find all ratings submitted BY this user
+        // We need to find trips where the user participated and check ratings for those trips
+        List<Avis> allRatings = new ArrayList<>();
+        
+        // Get trips where user is the driver
+        List<Voyage> driverTrips = voyageRepository.findByConducteurId(userId);
+        for (Voyage trip : driverTrips) {
+            // Driver can rate passengers - get ratings for passengers in this trip
+            List<Reservation> reservations = reservationRepository.findByVoyageId(trip.getId());
+            for (Reservation reservation : reservations) {
+                if (reservation.getStatus() == Reservation.ReservationStatus.CONFIRMED ||
+                    reservation.getStatus() == Reservation.ReservationStatus.COMPLETED) {
+                    // Find ratings for this passenger (userId = passengerId)
+                    List<Avis> passengerRatings = avisRepository.findByUserId(reservation.getPassagerId())
+                        .stream()
+                        .filter(avis -> trip.getId().equals(avis.getVoyageId()))
+                        .collect(java.util.stream.Collectors.toList());
+                    allRatings.addAll(passengerRatings);
+                }
+            }
+        }
+        
+        // Get trips where user is a passenger (has confirmed reservations)
+        List<Reservation> passengerReservations = reservationRepository.findByPassagerId(userId);
+        for (Reservation reservation : passengerReservations) {
+            if (reservation.getStatus() == Reservation.ReservationStatus.CONFIRMED ||
+                reservation.getStatus() == Reservation.ReservationStatus.COMPLETED) {
+                Voyage trip = voyageRepository.findById(reservation.getVoyageId()).orElse(null);
+                if (trip != null) {
+                    // Passenger can rate the driver - find ratings for the driver
+                    Long driverId = trip.getConducteurId();
+                    if (driverId != null) {
+                        List<Avis> driverRatings = avisRepository.findByUserId(driverId)
+                            .stream()
+                            .filter(avis -> trip.getId().equals(avis.getVoyageId()))
+                            .collect(java.util.stream.Collectors.toList());
+                        allRatings.addAll(driverRatings);
+                    }
+                }
+            }
+        }
+        
+        // Remove duplicates - show all ratings submitted by user (pending, approved, rejected)
+        // Users should see all their submitted ratings to know the status
+        return allRatings.stream()
+            .distinct() // Based on rating ID
+            .collect(java.util.stream.Collectors.toList());
+    }
+    
+    @Override
     public List<Avis> getRatingsByTrip(Long tripId) {
         return avisRepository.findByVoyageId(tripId);
     }
@@ -234,9 +301,33 @@ public class RatingServiceImpl implements RatingService {
     @Override
     public boolean canRateUser(Long raterId, Long targetUserId, Long tripId) {
         // Check if the rater participated in the trip
-        // This would require checking reservations
-        return reservationRepository.findByPassagerId(raterId).stream()
-            .anyMatch(reservation -> tripId.equals(reservation.getVoyageId()));
+        // Either:
+        // 1. The rater is the driver of the trip
+        // 2. The rater is a passenger (has a confirmed reservation)
+        // 3. The target user is a passenger in the trip (for driver rating passengers)
+        
+        // Check if rater is the driver
+        return voyageRepository.findById(tripId)
+            .map(voyage -> {
+                // If rater is the driver, they can rate any passenger
+                if (voyage.getConducteurId() != null && voyage.getConducteurId().equals(raterId)) {
+                    // Check if target user is a passenger in this trip with a valid participation status
+                    return reservationRepository.findByVoyageId(tripId).stream()
+                        .anyMatch(reservation -> reservation.getPassagerId().equals(targetUserId)
+                            && (
+                                reservation.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.CONFIRMED
+                                || reservation.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.COMPLETED
+                            )
+                        );
+                }
+                // If rater is a passenger, they can rate the driver
+                return reservationRepository.findByPassagerId(raterId).stream()
+                    .anyMatch(reservation -> tripId.equals(reservation.getVoyageId()) 
+                        && reservation.getStatus() == esprit.pfe.covoiturage_final.entities.Reservation.ReservationStatus.CONFIRMED
+                        && voyage.getConducteurId() != null 
+                        && voyage.getConducteurId().equals(targetUserId));
+            })
+            .orElse(false);
     }
     
     @Override

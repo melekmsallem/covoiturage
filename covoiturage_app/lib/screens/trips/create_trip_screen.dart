@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../../services/trip_creation_service.dart';
+import '../../services/trip_service.dart';
+import '../../services/api_service.dart';
+import '../../widgets/simple_location_picker_widget.dart';
 
 class CreateTripScreen extends StatefulWidget {
   const CreateTripScreen({super.key});
@@ -11,7 +13,7 @@ class CreateTripScreen extends StatefulWidget {
 
 class _CreateTripScreenState extends State<CreateTripScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _tripCreationService = TripCreationService();
+  final _apiService = ApiService.instance;
 
   // Form controllers
   final _priceController = TextEditingController();
@@ -27,6 +29,20 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   Map<String, dynamic>? _selectedArrivalCity;
   bool _isLoading = false;
   Map<String, dynamic>? _estimationResult;
+  
+  // Step-by-step form state
+  int _currentStep = 0;
+  final int _totalSteps = 4;
+  
+  // Pickup mode variables
+  String? _selectedPickupMode;
+  List<Map<String, dynamic>> _pickupPoints = [];
+  bool _allowLocationSharing = true;
+  bool _flexiblePickupTimes = true;
+  
+  // GPS coordinates for departure and arrival
+  Map<String, dynamic>? _departurePoint;
+  Map<String, dynamic>? _arrivalPoint;
   
   // Validation errors
   String? _priceError;
@@ -58,46 +74,35 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
   Future<void> _loadFormData() async {
     setState(() => _isLoading = true);
     try {
-      // Simulate API call with mock data
-      await Future.delayed(const Duration(seconds: 1));
+      print('DEBUG: Loading form data from API...');
       
-      // Create mock cities data for Tunisia
-      final mockCities = [
-        {'id': 1, 'name': 'Tunis', 'region': 'Tunis'},
-        {'id': 2, 'name': 'Sfax', 'region': 'Sfax'},
-        {'id': 3, 'name': 'Sousse', 'region': 'Sousse'},
-        {'id': 4, 'name': 'Kairouan', 'region': 'Kairouan'},
-        {'id': 5, 'name': 'Bizerte', 'region': 'Bizerte'},
-        {'id': 6, 'name': 'Gabès', 'region': 'Gabès'},
-        {'id': 7, 'name': 'Ariana', 'region': 'Ariana'},
-        {'id': 8, 'name': 'Ben Arous', 'region': 'Ben Arous'},
-        {'id': 9, 'name': 'Monastir', 'region': 'Monastir'},
-        {'id': 10, 'name': 'Nabeul', 'region': 'Nabeul'},
-        {'id': 11, 'name': 'Kasserine', 'region': 'Kasserine'},
-        {'id': 12, 'name': 'Gafsa', 'region': 'Gafsa'},
-        {'id': 13, 'name': 'Tozeur', 'region': 'Tozeur'},
-        {'id': 14, 'name': 'Béja', 'region': 'Béja'},
-        {'id': 15, 'name': 'Jendouba', 'region': 'Jendouba'},
-        {'id': 16, 'name': 'Kef', 'region': 'Kef'},
-        {'id': 17, 'name': 'Siliana', 'region': 'Siliana'},
-        {'id': 18, 'name': 'Mahdia', 'region': 'Mahdia'},
-        {'id': 19, 'name': 'Tataouine', 'region': 'Tataouine'},
-        {'id': 20, 'name': 'Medenine', 'region': 'Medenine'},
-      ];
+      // Load cities from real API
+      final citiesResponse = await _apiService.getDynamic('/cities');
+      print('DEBUG: Cities response: $citiesResponse');
       
-      // Create mock trip options
-      final mockOptions = [
-        {'id': 1, 'name': 'Air Conditioning', 'icon': 'ac'},
-        {'id': 2, 'name': 'WiFi', 'icon': 'wifi'},
-        {'id': 3, 'name': 'Music', 'icon': 'music'},
-        {'id': 4, 'name': 'Smoking Allowed', 'icon': 'smoking'},
-        {'id': 5, 'name': 'Pet Friendly', 'icon': 'pets'},
-        {'id': 6, 'name': 'Luggage Space', 'icon': 'luggage'},
-      ];
+      List<dynamic> citiesList = [];
+      if (citiesResponse is List) {
+        citiesList = citiesResponse;
+      } else if (citiesResponse is Map && citiesResponse.containsKey('data')) {
+        citiesList = citiesResponse['data'] as List<dynamic>? ?? [];
+      }
+      
+      // Load options from real API
+      final optionsResponse = await _apiService.getDynamic('/options');
+      print('DEBUG: Options response: $optionsResponse');
+      
+      List<dynamic> optionsList = [];
+      if (optionsResponse is List) {
+        optionsList = optionsResponse;
+      } else if (optionsResponse is Map && optionsResponse.containsKey('data')) {
+        optionsList = optionsResponse['data'] as List<dynamic>? ?? [];
+      }
+      
+      print('DEBUG: Loaded ${citiesList.length} cities and ${optionsList.length} options');
       
       setState(() {
-        _cities = mockCities;
-        _options = mockOptions;
+        _cities = citiesList.cast<Map<String, dynamic>>();
+        _options = optionsList.cast<Map<String, dynamic>>();
       });
     } catch (e) {
       _showErrorSnackBar('Failed to load form data: $e');
@@ -116,7 +121,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
       if (price == null || price <= 0) {
         setState(() => _priceError = 'Please enter a valid price');
       } else if (price > 320) {
-        setState(() => _priceError = 'Price is quite high (over 320 TND)');
+        setState(() => _priceError = 'Price is quite high (over 320 coins)');
       } else {
         setState(() => _priceError = null);
       }
@@ -190,7 +195,50 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
            _departureTime != null &&
            _arrivalTime != null &&
            _selectedDepartureCity != null &&
-           _selectedArrivalCity != null;
+           _selectedArrivalCity != null &&
+           _selectedPickupMode != null &&
+           _departurePoint != null; // Departure point is required
+  }
+
+  bool _isCurrentStepValid() {
+    switch (_currentStep) {
+      case 0: // Route selection step
+        return _selectedDepartureCity != null && 
+               _selectedArrivalCity != null &&
+               _departureCityError == null && 
+               _arrivalCityError == null;
+      case 1: // Date & Time step
+        return _departureTime != null && 
+               _arrivalTime != null &&
+               _departureTimeError == null && 
+               _arrivalTimeError == null;
+      case 2: // Price & Seats step
+        return _priceError == null && 
+               _seatsError == null &&
+               _priceController.text.isNotEmpty &&
+               _maxSeatsController.text.isNotEmpty;
+      case 3: // Pickup options step
+        return _selectedPickupMode != null && 
+               (_selectedPickupMode == 'FLEXIBLE' || _departurePoint != null);
+      default:
+        return false;
+    }
+  }
+
+  void _nextStep() {
+    if (_isCurrentStepValid() && _currentStep < _totalSteps - 1) {
+      setState(() {
+        _currentStep++;
+      });
+    }
+  }
+
+  void _previousStep() {
+    if (_currentStep > 0) {
+      setState(() {
+        _currentStep--;
+      });
+    }
   }
 
   Future<void> _estimateTrip() async {
@@ -201,24 +249,43 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     setState(() => _isLoading = true);
     try {
-      // Simulate API call with mock estimation data
-      await Future.delayed(const Duration(seconds: 2));
+      print('DEBUG: Estimating trip from ${_selectedDepartureCity!['name']} to ${_selectedArrivalCity!['name']}');
       
-      // Create mock estimation result
-      final mockEstimation = {
-        'distance': '120.5',
-        'durationFormatted': '2h 15min',
-        'estimatedFuelCost': '15.2',
-        'route': {
-          'departure': _selectedDepartureCity!['name'],
-          'arrival': _selectedArrivalCity!['name'],
-        }
+      // Use real API call for trip estimation
+      final estimationRequest = {
+        'departureAddress': _selectedDepartureCity!['name'],
+        'arrivalAddress': _selectedArrivalCity!['name'],
       };
       
-      setState(() => _estimationResult = mockEstimation);
-      _showSuccessSnackBar('Trip estimated successfully!');
+      // Use real trip estimation endpoint
+      final estimationResponse = await _apiService.postPublic('/trip-creation/estimate', estimationRequest);
+      print('DEBUG: Estimation response: $estimationResponse');
+      
+      // Validate response structure before setting
+      if (estimationResponse.containsKey('distance') && 
+          estimationResponse.containsKey('durationFormatted') && 
+          estimationResponse.containsKey('estimatedFuelCost')) {
+        setState(() => _estimationResult = estimationResponse);
+      // Trip estimated successfully
+      } else {
+        print('DEBUG: Invalid estimation response structure: $estimationResponse');
+        _showErrorSnackBar('Invalid estimation response. Please try again.');
+      }
     } catch (e) {
-      _showErrorSnackBar('Estimation error: $e');
+      print('DEBUG: Estimation error: $e');
+      String errorMessage = 'Estimation failed';
+      
+      if (e.toString().contains('403')) {
+        errorMessage = 'Authentication error. Please log in again.';
+      } else if (e.toString().contains('404')) {
+        errorMessage = 'Estimation service not available. Please try again.';
+      } else if (e.toString().contains('500')) {
+        errorMessage = 'Server error. Please try again later.';
+      } else {
+        errorMessage = 'Estimation error: $e';
+      }
+      
+      _showErrorSnackBar(errorMessage);
     } finally {
       setState(() => _isLoading = false);
     }
@@ -232,25 +299,57 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
     setState(() => _isLoading = true);
     try {
-      // Simulate API call with mock trip creation
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Create mock trip result
-      final mockResult = {
-        'id': DateTime.now().millisecondsSinceEpoch,
+      // Create pickup points list - include departure point as first pickup point
+      List<Map<String, dynamic>> finalPickupPoints = [];
+      if (_selectedPickupMode == 'DESIGNATED_POINT') {
+        // Add departure point as the first pickup point
+        if (_departurePoint != null) {
+          finalPickupPoints.add({
+            'address': _departurePoint!['address'],
+            'latitude': _departurePoint!['latitude'],
+            'longitude': _departurePoint!['longitude'],
+            'pickupTime': _departureTime!.toIso8601String(),
+            'maxWaitingTime': 10, // 10 minutes default
+            'pickupOrder': 1,
+          });
+        }
+        // Add other designated pickup points
+        for (int i = 0; i < _pickupPoints.length; i++) {
+          finalPickupPoints.add({
+            'address': _pickupPoints[i]['address'],
+            'latitude': _pickupPoints[i]['latitude'],
+            'longitude': _pickupPoints[i]['longitude'],
+            'pickupTime': _pickupPoints[i]['pickupTime'] ?? _departureTime!.toIso8601String(),
+            'maxWaitingTime': _pickupPoints[i]['maxWaitingTime'] ?? 10,
+            'pickupOrder': i + 2, // Start from 2 since departure is 1
+          });
+        }
+      }
+
+      // Create real trip using API
+      final tripData = {
         'departureCity': _selectedDepartureCity!['name'],
         'arrivalCity': _selectedArrivalCity!['name'],
         'departureTime': _departureTime!.toIso8601String(),
         'arrivalTime': _arrivalTime!.toIso8601String(),
         'pricePerSeat': double.tryParse(_priceController.text) ?? 0.0,
         'maxSeats': int.tryParse(_maxSeatsController.text) ?? 1,
-        'status': 'ACTIVE',
-        'createdAt': DateTime.now().toIso8601String(),
+        'description': 'Carpool trip',
+        'optionIds': _selectedOptions,
+        'pickupMode': _selectedPickupMode,
+        'pickupPoints': _selectedPickupMode == 'DESIGNATED_POINT' ? finalPickupPoints : null,
+        'allowLocationSharing': _allowLocationSharing,
+        'flexiblePickupTimes': _flexiblePickupTimes,
+        // Add GPS coordinates - departure is always required, arrival is optional
+        if (_departurePoint != null) 'departurePoint': _departurePoint,
+        if (_arrivalPoint != null) 'arrivalPoint': _arrivalPoint,
       };
+
+      final tripService = TripService();
+      final result = await tripService.createTrip(tripData);
       
       if (mounted) {
-        _showSuccessSnackBar('Trip created successfully!');
-        Navigator.of(context).pop(mockResult);
+        Navigator.of(context).pop(result);
       }
     } catch (e) {
       _showErrorSnackBar('Failed to create trip: $e');
@@ -268,19 +367,12 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     }
   }
 
-  void _showSuccessSnackBar(String message) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.green),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Create New Trip'),
+        title: Text('Create New Trip (Step ${_currentStep + 1}/$_totalSteps)'),
         backgroundColor: Colors.blue,
         foregroundColor: Colors.white,
         actions: [],
@@ -294,21 +386,260 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildBasicInfoSection(),
+                    _buildStepIndicator(),
                     const SizedBox(height: 24),
-                    _buildDateTimeSection(),
+                    _buildCurrentStep(),
                     const SizedBox(height: 24),
-                    _buildLocationSection(),
-                    const SizedBox(height: 24),
-                    _buildOptionsSection(),
-                    const SizedBox(height: 24),
-                    _buildEstimationSection(),
-                    const SizedBox(height: 32),
-                    _buildActionButtons(),
+                    _buildNavigationButtons(),
                   ],
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildStepIndicator() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Trip Creation Progress',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: List.generate(_totalSteps, (index) {
+                final isCompleted = index < _currentStep;
+                final isCurrent = index == _currentStep;
+                
+                return Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: isCompleted || isCurrent 
+                          ? Colors.blue 
+                          : Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _getStepTitle(),
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _getStepTitle() {
+    switch (_currentStep) {
+      case 0:
+        return 'Step a: Select Route (Departure & Arrival Cities)';
+      case 1:
+        return 'Step b: Set Date & Time';
+      case 2:
+        return 'Step c: Set Price & Number of Seats';
+      case 3:
+        return 'Step d: Configure Pickup Options';
+      default:
+        return 'Unknown Step';
+    }
+  }
+
+  Widget _buildCurrentStep() {
+    switch (_currentStep) {
+      case 0:
+        return _buildRouteSelectionStep();
+      case 1:
+        return _buildDateTimeStep();
+      case 2:
+        return _buildPriceAndSeatsStep();
+      case 3:
+        return _buildPickupOptionsStep();
+      default:
+        return Container();
+    }
+  }
+
+  Widget _buildRouteSelectionStep() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.green.shade50, Colors.teal.shade50],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.shade200, width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.route, color: Colors.green.shade600, size: 28),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Route Selection',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Required',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Departure city selection
+            DropdownButtonFormField<Map<String, dynamic>>(
+              value: _selectedDepartureCity,
+              decoration: InputDecoration(
+                labelText: 'Departure City',
+                prefixIcon: const Icon(Icons.location_on),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                errorText: _departureCityError,
+              ),
+              items: _cities.map((city) {
+                return DropdownMenuItem<Map<String, dynamic>>(
+                  value: city,
+                  child: Text(city['name'] ?? 'Unknown City'),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedDepartureCity = value;
+                });
+                _validateDepartureCity();
+                _validateArrivalCity(); // Re-validate arrival city
+              },
+            ),
+            const SizedBox(height: 16),
+            // Arrival city selection
+            DropdownButtonFormField<Map<String, dynamic>>(
+              value: _selectedArrivalCity,
+              decoration: InputDecoration(
+                labelText: 'Arrival City',
+                prefixIcon: const Icon(Icons.location_on),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                errorText: _arrivalCityError,
+              ),
+              items: _cities.map((city) {
+                return DropdownMenuItem<Map<String, dynamic>>(
+                  value: city,
+                  child: Text(city['name'] ?? 'Unknown City'),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _selectedArrivalCity = value;
+                });
+                _validateArrivalCity();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDateTimeStep() {
+    return _buildDateTimeSection();
+  }
+
+  Widget _buildPriceAndSeatsStep() {
+    return _buildBasicInfoSection();
+  }
+
+  Widget _buildPickupOptionsStep() {
+    return Column(
+      children: [
+        _buildPickupModeSection(),
+        const SizedBox(height: 16),
+        _buildLocationSection(),
+      ],
+    );
+  }
+
+  Widget _buildNavigationButtons() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Row(
+          children: [
+            if (_currentStep > 0)
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: _previousStep,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                  ),
+                  child: const Text('Previous'),
+                ),
+              ),
+            if (_currentStep > 0) const SizedBox(width: 16),
+            Expanded(
+              child: ElevatedButton(
+                onPressed: _currentStep == _totalSteps - 1 
+                    ? (_isLoading || !_isFormValid()) ? null : _createTrip
+                    : _isCurrentStepValid() ? _nextStep : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _currentStep == _totalSteps - 1 
+                      ? (_isFormValid() ? Colors.blue : Colors.grey)
+                      : (_isCurrentStepValid() ? Colors.blue : Colors.grey),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : Text(_currentStep == _totalSteps - 1 
+                        ? (_isFormValid() ? 'Create Trip' : 'Complete all steps')
+                        : (_isCurrentStepValid() ? 'Continue' : 'Complete this step')),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -319,33 +650,124 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Basic Information',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.blue.shade50, Colors.purple.shade50],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.shade200, width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.car_rental, color: Colors.blue.shade600, size: 28),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Trip Details',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Required',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
-            TextFormField(
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    spreadRadius: 1,
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: TextFormField(
               controller: _priceController,
               decoration: InputDecoration(
-                labelText: 'Price per Seat (TND)',
-                prefixIcon: const Icon(Icons.payments),
-                border: const OutlineInputBorder(),
+                labelText: 'Price per Seat (coins)',
+                  prefixIcon: Icon(Icons.monetization_on, color: Colors.amber.shade600),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.blue.shade400, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
                 errorText: _priceError,
               ),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*'))],
+              ),
             ),
             const SizedBox(height: 16),
-            TextFormField(
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    spreadRadius: 1,
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: TextFormField(
               controller: _maxSeatsController,
               decoration: InputDecoration(
                 labelText: 'Maximum Seats',
-                prefixIcon: const Icon(Icons.people),
-                border: const OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.people, color: Colors.orange.shade600),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.blue.shade400, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
                 errorText: _seatsError,
               ),
               keyboardType: TextInputType.number,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              ),
             ),
           ],
         ),
@@ -360,9 +782,48 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.orange.shade50, Colors.red.shade50],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.orange.shade200, width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.schedule, color: Colors.orange.shade600, size: 28),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
               'Date & Time',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Required',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.orange.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
             Column(
@@ -473,9 +934,48 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Route',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.green.shade50, Colors.teal.shade50],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.shade200, width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.route, color: Colors.green.shade600, size: 28),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Route Selection',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Required',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 16),
             Autocomplete<Map<String, dynamic>>(
@@ -686,6 +1186,169 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
               },
             ),
             const SizedBox(height: 16),
+            
+            // GPS Coordinate Selection for Departure
+            if (_selectedDepartureCity != null) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SimpleLocationPickerWidget(
+                              title: 'Select Departure Point',
+                              onLocationSelected: _setDeparturePoint,
+                              initialLocation: _departurePoint,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.my_location),
+                      label: Text(_departurePoint != null 
+                          ? 'Update Departure Point' 
+                          : 'Set Departure Point'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blue.shade50,
+                        foregroundColor: Colors.blue.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_departurePoint != null)
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _departurePoint = null;
+                        });
+                      },
+                      icon: const Icon(Icons.clear, color: Colors.red),
+                      tooltip: 'Clear departure point',
+                    ),
+                ],
+              ),
+              if (_departurePoint != null)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.blue.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.location_on, color: Colors.blue.shade600, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${_departurePoint!['address'] ?? 'Selected location'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 16),
+            ],
+            
+            // GPS Coordinate Selection for Arrival (Optional)
+            if (_selectedArrivalCity != null) ...[
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange.shade600, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Arrival point is optional. If not set, passengers will be dropped off anywhere in ${_selectedArrivalCity!['name']}.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.orange.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () async {
+                        await Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => SimpleLocationPickerWidget(
+                              title: 'Select Arrival Point (Optional)',
+                              onLocationSelected: _setArrivalPoint,
+                              initialLocation: _arrivalPoint,
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.my_location),
+                      label: Text(_arrivalPoint != null 
+                          ? 'Update Arrival Point' 
+                          : 'Set Arrival Point (Optional)'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green.shade50,
+                        foregroundColor: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  if (_arrivalPoint != null)
+                    IconButton(
+                      onPressed: () {
+                        setState(() {
+                          _arrivalPoint = null;
+                        });
+                      },
+                      icon: const Icon(Icons.clear, color: Colors.red),
+                      tooltip: 'Clear arrival point',
+                    ),
+                ],
+              ),
+              if (_arrivalPoint != null)
+                Container(
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.location_on, color: Colors.green.shade600, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '${_arrivalPoint!['address'] ?? 'Selected location'}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 16),
+            ],
+            
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
@@ -873,7 +1536,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    price == 0 ? 'Free' : '+${price.toInt()} TND',
+                    price == 0 ? 'Free' : '+${price.toInt()} coins',
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
@@ -1017,7 +1680,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                 Expanded(
                   child: _buildEstimationCard(
                     'Distance',
-                    '${_estimationResult!['distance']} km',
+                    '${_estimationResult!['distance'] ?? 'N/A'} km',
                     Icons.straighten,
                   ),
                 ),
@@ -1025,7 +1688,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
                 Expanded(
                   child: _buildEstimationCard(
                     'Duration',
-                    _estimationResult!['durationFormatted'],
+                    _estimationResult!['durationFormatted'] ?? 'N/A',
                     Icons.schedule,
                   ),
                 ),
@@ -1034,7 +1697,7 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
             const SizedBox(height: 16),
             _buildEstimationCard(
               'Estimated Fuel Cost',
-              '${_estimationResult!['estimatedFuelCost']} TND',
+              '${_estimationResult!['estimatedFuelCost'] ?? 'N/A'} coins',
               Icons.local_gas_station,
             ),
           ],
@@ -1077,6 +1740,416 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
     );
   }
 
+  Widget _buildPickupModeSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.green.shade50, Colors.teal.shade50],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green.shade200, width: 1),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.location_on, color: Colors.green.shade600, size: 28),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'Pickup Mode',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      'Required',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'How do you want to handle passenger pickups?',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: RadioListTile<String>(
+                    title: const Text('Designated Points'),
+                    subtitle: const Text('Set specific pickup locations'),
+                    value: 'DESIGNATED_POINT',
+                    groupValue: _selectedPickupMode,
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedPickupMode = value;
+                      });
+                    },
+                    activeColor: Colors.green,
+                  ),
+                ),
+                Expanded(
+                  child: RadioListTile<String>(
+                    title: const Text('Individual Pickup'),
+                    subtitle: const Text('Pick up each passenger individually'),
+                    value: 'INDIVIDUAL_PICKUP',
+                    groupValue: _selectedPickupMode,
+                    onChanged: (value) {
+                      setState(() {
+                        _selectedPickupMode = value;
+                      });
+                    },
+                    activeColor: Colors.green,
+                  ),
+                ),
+              ],
+            ),
+            if (_selectedPickupMode == 'DESIGNATED_POINT') ...[
+              const SizedBox(height: 16),
+              _buildDesignatedPointsSection(),
+            ] else if (_selectedPickupMode == 'INDIVIDUAL_PICKUP') ...[
+              const SizedBox(height: 16),
+              _buildIndividualPickupSection(),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDesignatedPointsSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.blue.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.map, color: Colors.blue.shade600),
+              const SizedBox(width: 8),
+              Text(
+                'Designated Pickup Points',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.blue.shade700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Show warning if departure point is not set
+          if (_departurePoint == null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.red.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning, color: Colors.red.shade600, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'You must set a departure point first. Use the GPS coordinate selector above.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.red.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          
+          // Always show departure point as first pickup point
+          if (_departurePoint != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor: Colors.green,
+                    child: const Text('1', style: TextStyle(color: Colors.white)),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Departure Point (Automatic)',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            color: Colors.green.shade700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _departurePoint!['address'] ?? 'Selected location',
+                          style: TextStyle(
+                            color: Colors.green.shade600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.check_circle, color: Colors.green.shade600),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+          
+          // Show additional pickup points
+          if (_pickupPoints.isEmpty && _departurePoint == null) ...[
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300, style: BorderStyle.solid),
+              ),
+              child: Column(
+                children: [
+                  Icon(Icons.location_off, color: Colors.grey.shade400, size: 48),
+                  const SizedBox(height: 8),
+                  Text(
+                    'No pickup points added yet',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else if (_pickupPoints.isNotEmpty) ...[
+            ListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: _pickupPoints.length,
+              itemBuilder: (context, index) {
+                return _buildPickupPointCard(index);
+              },
+            ),
+          ],
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.blue.shade600, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'The departure point is automatically included as the first pickup point. Add additional pickup points below.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _departurePoint != null ? _addPickupPoint : null,
+              icon: const Icon(Icons.add_location),
+              label: Text(_departurePoint != null 
+                  ? 'Add Additional Pickup Point' 
+                  : 'Set Departure Point First'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _departurePoint != null ? Colors.blue : Colors.grey,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIndividualPickupSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.person_pin_circle, color: Colors.orange.shade600),
+              const SizedBox(width: 8),
+              Text(
+                'Individual Pickup Settings',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.orange.shade700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile(
+            title: const Text('Allow passenger location sharing'),
+            subtitle: const Text('Passengers can share their exact location'),
+            value: _allowLocationSharing,
+            onChanged: (value) {
+              setState(() {
+                _allowLocationSharing = value;
+              });
+            },
+            activeColor: Colors.orange,
+          ),
+          SwitchListTile(
+            title: const Text('Flexible pickup times'),
+            subtitle: const Text('Allow small time adjustments'),
+            value: _flexiblePickupTimes,
+            onChanged: (value) {
+              setState(() {
+                _flexiblePickupTimes = value;
+              });
+            },
+            activeColor: Colors.orange,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPickupPointCard(int index) {
+    final point = _pickupPoints[index];
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: CircleAvatar(
+          backgroundColor: Colors.blue,
+          child: Text('${index + 2}'), // Start from 2 since departure is 1
+        ),
+        title: Text(point['address'] ?? 'Select location'),
+        subtitle: Text('Pickup time: ${point['pickupTime']?.toString() ?? 'Not set'}'),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: () => _editPickupPoint(index),
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: () => _removePickupPoint(index),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _addPickupPoint() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SimpleLocationPickerWidget(
+          title: 'Select Pickup Point',
+          onLocationSelected: (locationData) {
+            setState(() {
+              _pickupPoints.add({
+                ...locationData,
+                'pickupTime': null,
+                'maxWaitingTime': 5, // Default 5 minutes
+                'pickupOrder': _pickupPoints.length + 1,
+              });
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  void _editPickupPoint(int index) {
+    final existingPoint = _pickupPoints[index];
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => SimpleLocationPickerWidget(
+          title: 'Edit Pickup Point',
+          initialLocation: existingPoint,
+          onLocationSelected: (locationData) {
+            setState(() {
+              _pickupPoints[index] = {
+                ..._pickupPoints[index],
+                ...locationData,
+              };
+            });
+          },
+        ),
+      ),
+    );
+  }
+
+  void _removePickupPoint(int index) {
+    setState(() {
+      _pickupPoints.removeAt(index);
+    });
+  }
+
+
   Widget _buildActionButtons() {
     return SizedBox(
       width: double.infinity,
@@ -1096,6 +2169,20 @@ class _CreateTripScreenState extends State<CreateTripScreen> {
 
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.day}/${dateTime.month}/${dateTime.year} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+
+  // Method to set departure GPS coordinates
+  void _setDeparturePoint(Map<String, dynamic> point) {
+    setState(() {
+      _departurePoint = point;
+    });
+  }
+
+  // Method to set arrival GPS coordinates  
+  void _setArrivalPoint(Map<String, dynamic> point) {
+    setState(() {
+      _arrivalPoint = point;
+    });
   }
 }
 

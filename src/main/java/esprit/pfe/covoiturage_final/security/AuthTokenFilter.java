@@ -1,5 +1,6 @@
 package esprit.pfe.covoiturage_final.security;
 
+import esprit.pfe.covoiturage_final.entities.User;
 import esprit.pfe.covoiturage_final.services.UserDetailsServiceImpl;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -31,22 +32,30 @@ public class AuthTokenFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         try {
             String jwt = parseJwt(request);
+            logger.debug("Request URI: {}, JWT extracted: {}", request.getRequestURI(), jwt != null);
+            
             if (jwt != null && jwtUtils.validateJwtToken(jwt)) {
                 String usernameOrEmail = jwtUtils.getUserNameFromJwtToken(jwt);
                 if (usernameOrEmail != null) {
                     usernameOrEmail = usernameOrEmail.trim();
                 }
 
+                logger.debug("JWT token extracted username: {}", usernameOrEmail);
+
                 try {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(usernameOrEmail);
+                    logger.debug("UserDetails loaded for username: {}, user ID: {}", usernameOrEmail, ((User) userDetails).getId());
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                     SecurityContextHolder.getContext().setAuthentication(authentication);
+                    logger.debug("Authentication set successfully for user: {}", usernameOrEmail);
                 } catch (Exception e) {
                     logger.error("Cannot set user authentication for subject: {}", usernameOrEmail, e);
                 }
+            } else {
+                logger.warn("JWT validation failed or no JWT found for URI: {}", request.getRequestURI());
             }
         } catch (Exception e) {
             logger.error("Cannot set user authentication: {}", e);
@@ -65,24 +74,3 @@ public class AuthTokenFilter extends OncePerRequestFilter {
         return null;
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -53,9 +53,11 @@ dependencies:
   # Image handling
   image_picker: ^1.0.4
   
-  # Maps and location
-  google_maps_flutter: ^2.5.0
+  # Maps and location (OpenStreetMap)
+  flutter_map: ^6.1.0
+  latlong2: ^0.9.1
   geolocator: ^10.1.0
+  geocoding: ^2.1.1
   
   # UI components
   flutter_svg: ^2.0.9
@@ -73,6 +75,14 @@ dependencies:
   
   # PIN code input for SMS verification
   pin_code_fields: ^8.0.1
+  
+  # ML Kit for text recognition and OCR (pinned to versions compatible with current AGP)
+  google_mlkit_text_recognition: ^0.8.1
+  google_mlkit_commons: ^0.4.0
+  
+  # Camera and image processing
+  camera: ^0.10.5+5
+  path_provider: ^2.1.1
 
 dev_dependencies:
   flutter_test:

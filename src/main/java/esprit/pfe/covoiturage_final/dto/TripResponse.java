@@ -21,6 +21,7 @@ public class TripResponse {
     private Integer maxSeats;
     private String description;
     private Voyage.VoyageStatus status;
+    private Voyage.PickupMode pickupMode;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     
@@ -39,6 +40,10 @@ public class TripResponse {
     
     // Cities
     private List<CityInfo> cities;
+    
+    // Passengers/Reservations for completed trips (used for rating)
+    private List<PassengerInfo> passengers;
+    private List<ReservationInfo> reservations;
     
     @Data
     @NoArgsConstructor
@@ -66,6 +71,28 @@ public class TripResponse {
         private Double longitude;
         private String address;
         private String pointType;
+    }
+    
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PassengerInfo {
+        private Long id;
+        private String username;
+        private String firstName;
+        private String lastName;
+        private String phoneNumber;
+    }
+    
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ReservationInfo {
+        private Long id;
+        private Long passengerId;
+        private Integer numberOfSeats;
+        private String status;
+        private PassengerInfo passenger;
     }
     
     @Data

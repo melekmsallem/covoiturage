@@ -43,9 +43,15 @@ public class PaymentServiceImpl implements PaymentService {
         }
         
         // Check if payment already exists
-        Paiement existingPayment = paiementRepository.findOneByReservationId(reservationId);
-        if (existingPayment != null) {
-            throw new RuntimeException("Payment already exists for this reservation");
+        List<Paiement> existingPayments = paiementRepository.findByReservationId(reservationId);
+        if (!existingPayments.isEmpty()) {
+            // Check if there's already a pending or completed payment
+            boolean hasActivePayment = existingPayments.stream()
+                .anyMatch(p -> p.getStatus() == Paiement.PaymentStatus.PENDING || 
+                              p.getStatus() == Paiement.PaymentStatus.COMPLETED);
+            if (hasActivePayment) {
+                throw new RuntimeException("Payment already exists for this reservation");
+            }
         }
         
         Paiement payment = new Paiement();
@@ -157,7 +163,8 @@ public class PaymentServiceImpl implements PaymentService {
     
     @Override
     public Paiement getPaymentByReservationId(Long reservationId) {
-        return paiementRepository.findOneByReservationId(reservationId);
+        List<Paiement> payments = paiementRepository.findByReservationIdOrderByPaymentDateDesc(reservationId);
+        return payments.isEmpty() ? null : payments.get(0); // Return the most recent payment
     }
     
     @Override

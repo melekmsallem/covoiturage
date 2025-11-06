@@ -1,6 +1,4 @@
-import 'dart:convert';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 
 // Payment method enum
@@ -148,16 +146,17 @@ class PaymentService {
     required PaymentMethod paymentMethod,
   }) async {
     try {
-      // Simulate payment processing
-      await Future.delayed(const Duration(seconds: 2));
+      print('DEBUG: Processing payment $paymentId with method ${paymentMethod.value}');
       
-      // Generate mock transaction ID
+      // Generate transaction ID
       final transactionId = 'TXN_${DateTime.now().millisecondsSinceEpoch}';
       
       final response = await ApiService.instance.post('/payments/$paymentId/process', {
         'transactionId': transactionId,
         'paymentDetails': 'Payment processed via ${paymentMethod.value}',
       });
+      
+      print('DEBUG: Payment processed successfully: $response');
       
       return Payment.fromJson(response);
     } catch (e) {

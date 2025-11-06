@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/company_logo.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -17,10 +18,14 @@ class WelcomeScreen extends StatelessWidget {
             Center(
               child: Column(
                 children: [
-                  Icon(Icons.directions_car_filled, size: 72, color: colorScheme.primary),
-                  const SizedBox(height: 12),
+                  const CompanyLogo(
+                    size: 200,
+                    showTagline: true,
+                    tagline: 'Your Journey, Connected',
+                  ),
+                  const SizedBox(height: 24),
                   Text(
-                    'Welcome to RideShare',
+                    'Welcome',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
@@ -47,6 +52,37 @@ class WelcomeScreen extends StatelessWidget {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

@@ -2,7 +2,6 @@ package esprit.pfe.covoiturage_final.services;
 
 import esprit.pfe.covoiturage_final.dto.*;
 import esprit.pfe.covoiturage_final.entities.*;
-import esprit.pfe.covoiturage_final.entities.Voyage.VoyageStatus;
 import esprit.pfe.covoiturage_final.repositories.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -1301,7 +1300,50 @@ public class AdminServiceImpl implements AdminService {
     
     @Override
     public List<Map<String, Object>> getPendingRatings() {
-        return new ArrayList<>(); // Mock implementation
+        List<Avis> pendingRatings = avisRepository.findAll().stream()
+            .filter(r -> r.getStatus() == null || r.getStatus().equals("PENDING"))
+            .collect(Collectors.toList());
+        
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Avis rating : pendingRatings) {
+            Map<String, Object> ratingMap = new HashMap<>();
+            ratingMap.put("id", rating.getId());
+            ratingMap.put("rating", rating.getRating());
+            ratingMap.put("comment", rating.getComment() != null ? rating.getComment() : "");
+            ratingMap.put("status", rating.getStatus() != null ? rating.getStatus() : "PENDING");
+            ratingMap.put("createdAt", rating.getCreatedAt() != null ? rating.getCreatedAt().toString() : "");
+            ratingMap.put("voyageId", rating.getVoyageId());
+            
+            // Get user info
+            if (rating.getUserId() != null) {
+                User user = userRepository.findById(rating.getUserId()).orElse(null);
+                if (user != null) {
+                    ratingMap.put("userId", user.getId());
+                    ratingMap.put("userName", user.getUsername());
+                    ratingMap.put("userFirstName", user.getFirstName());
+                    ratingMap.put("userLastName", user.getLastName());
+                }
+            }
+            
+            // Get trip info
+            if (rating.getVoyageId() != null) {
+                Voyage trip = voyageRepository.findById(rating.getVoyageId()).orElse(null);
+                if (trip != null) {
+                    ratingMap.put("tripId", trip.getId());
+                    // Get departure and arrival cities
+                    if (trip.getDepartureVille() != null) {
+                        ratingMap.put("departureCity", trip.getDepartureVille().getName());
+                    }
+                    if (trip.getArrivalVille() != null) {
+                        ratingMap.put("arrivalCity", trip.getArrivalVille().getName());
+                    }
+                }
+            }
+            
+            result.add(ratingMap);
+        }
+        
+        return result;
     }
     
     @Override
@@ -1311,12 +1353,59 @@ public class AdminServiceImpl implements AdminService {
     
     @Override
     public boolean approveRating(Long ratingId) {
-        return true; // Mock implementation
+        try {
+            Avis rating = avisRepository.findById(ratingId)
+                .orElseThrow(() -> new RuntimeException("Rating not found"));
+            rating.setStatus("APPROVED");
+            rating.setIsVisible(true);
+            avisRepository.save(rating);
+            
+            // Recalculate the rated user's average rating now that this rating is approved and visible
+            if (rating.getUserId() != null) {
+                User ratedUser = userRepository.findById(rating.getUserId()).orElse(null);
+                if (ratedUser != null) {
+                    // Calculate average from approved/visible ratings only
+                    Double averageRating = avisRepository.getAverageRatingByUserId(rating.getUserId());
+                    if (ratedUser instanceof Conducteur) {
+                        Conducteur conducteur = (Conducteur) ratedUser;
+                        conducteur.setRating(averageRating != null ? averageRating : 0.0);
+                        userRepository.save(conducteur);
+                    } else if (ratedUser instanceof Passager) {
+                        Passager passager = (Passager) ratedUser;
+                        passager.setRating(averageRating != null ? averageRating : 0.0);
+                        userRepository.save(passager);
+                    }
+                }
+            }
+            
+            return true;
+        } catch (Exception e) {
+            logger.error("Error approving rating: " + ratingId, e);
+            return false;
+        }
     }
     
     @Override
     public boolean rejectRating(Long ratingId, String reason) {
-        return true; // Mock implementation
+        try {
+            Avis rating = avisRepository.findById(ratingId)
+                .orElseThrow(() -> new RuntimeException("Rating not found"));
+            rating.setStatus("REJECTED");
+            rating.setIsVisible(false);
+            if (reason != null && !reason.isEmpty()) {
+                // Store rejection reason in comment if needed, or add a notes field
+                if (rating.getComment() != null && !rating.getComment().isEmpty()) {
+                    rating.setComment(rating.getComment() + " [Rejected: " + reason + "]");
+                } else {
+                    rating.setComment("[Rejected: " + reason + "]");
+                }
+            }
+            avisRepository.save(rating);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error rejecting rating: " + ratingId, e);
+            return false;
+        }
     }
     
     @Override
@@ -1513,6 +1602,28 @@ public class AdminServiceImpl implements AdminService {
             return false;
         } catch (Exception e) {
             throw new RuntimeException("Failed to delete booking: " + e.getMessage());
+        }
+    }
+    
+    @Override
+    public boolean resolveBooking(Long bookingId) {
+        try {
+            Reservation reservation = reservationRepository.findById(bookingId)
+                .orElseThrow(() -> new RuntimeException("Booking not found"));
+            
+            // Resolve means: if PENDING -> CONFIRMED, if CONFIRMED -> COMPLETED
+            if (reservation.getStatus() == Reservation.ReservationStatus.PENDING) {
+                reservation.setStatus(Reservation.ReservationStatus.CONFIRMED);
+            } else if (reservation.getStatus() == Reservation.ReservationStatus.CONFIRMED) {
+                reservation.setStatus(Reservation.ReservationStatus.COMPLETED);
+            } else {
+                throw new RuntimeException("Cannot resolve booking with status: " + reservation.getStatus());
+            }
+            
+            reservationRepository.save(reservation);
+            return true;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to resolve booking: " + e.getMessage());
         }
     }
 }

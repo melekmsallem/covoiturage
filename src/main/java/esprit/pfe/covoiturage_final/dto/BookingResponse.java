@@ -19,11 +19,19 @@ public class BookingResponse {
     private LocalDateTime reservationDate;
     private String notes;
     
+    // Passenger pickup point for individual pickup trips
+    private String passengerPickupAddress;
+    private Double passengerPickupLatitude;
+    private Double passengerPickupLongitude;
+    
     // Trip information
     private TripInfo trip;
     
     // Passenger information
     private PassengerInfo passenger;
+    
+    // Driver information
+    private DriverInfo driver;
     
     @Data
     @NoArgsConstructor
@@ -56,5 +64,19 @@ public class BookingResponse {
         private String firstName;
         private String lastName;
         private String phoneNumber;
+    }
+    
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class DriverInfo {
+        private Long id;
+        private String username;
+        private String firstName;
+        private String lastName;
+        private String phoneNumber;
+        private String vehicleModel;
+        private String vehicleColor;
+        private String vehiclePlate;
     }
 }

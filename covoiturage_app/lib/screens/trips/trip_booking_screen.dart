@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../services/trip_service.dart';
+import '../../services/coin_service.dart';
+import '../../widgets/coin_balance_widget.dart';
+import '../../widgets/simple_location_picker_widget.dart';
 
 class TripBookingScreen extends StatefulWidget {
   final Map<String, dynamic> trip;
@@ -19,6 +22,15 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
   bool _isLoading = false;
   int _selectedSeats = 1;
   String? _seatsError;
+  Map<String, dynamic>? _selectedPickupPoint;
+  double _coinBalance = 0.0;
+  bool _isCheckingBalance = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkCoinBalance();
+  }
 
   @override
   void dispose() {
@@ -27,8 +39,68 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
     super.dispose();
   }
 
+  Future<void> _checkCoinBalance() async {
+    setState(() {
+      _isCheckingBalance = true;
+    });
+
+    try {
+      final balanceData = await CoinService.getBalance();
+      setState(() {
+        _coinBalance = (balanceData['balance'] ?? 0.0).toDouble();
+      });
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to load coin balance: $e')),
+        );
+      }
+    } finally {
+      setState(() {
+        _isCheckingBalance = false;
+      });
+    }
+  }
+
+  Future<void> _selectPickupPoint() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SimpleLocationPickerWidget(
+          title: 'Select Your Pickup Point',
+          onLocationSelected: (location) {
+            setState(() {
+              _selectedPickupPoint = location;
+            });
+          },
+          initialLocation: _selectedPickupPoint,
+          cityInfo: widget.trip['departureCityInfo'],
+          restrictToCity: true,
+        ),
+      ),
+    );
+  }
+
   Future<void> _bookTrip() async {
     if (!_validateForm()) return;
+
+    // Check coin balance
+    final totalPrice = widget.trip['pricePerSeat'] * _selectedSeats;
+    if (_coinBalance < totalPrice) {
+      _showInsufficientBalanceDialog(totalPrice);
+      return;
+    }
+
+    // Validate pickup point for individual pickup trips
+    if (widget.trip['pickupMode'] == 'INDIVIDUAL_PICKUP' && _selectedPickupPoint == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select your pickup point'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
     setState(() {
       _isLoading = true;
@@ -38,12 +110,13 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
       final bookingRequest = _tripService.formatBookingRequest(
         numberOfSeats: _selectedSeats,
         notes: _notesController.text.trim().isEmpty ? null : _notesController.text.trim(),
+        pickupPoint: _selectedPickupPoint,
       );
 
       final response = await _tripService.bookTrip(widget.trip['id'], bookingRequest);
       
       if (mounted) {
-        _showSuccessDialog(response);
+        _showBeautifulBookingSuccessDialog(response);
       }
     } catch (e) {
       if (mounted) {
@@ -81,69 +154,167 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
     return isValid;
   }
 
-  void _showSuccessDialog(Map<String, dynamic> booking) {
+  void _showInsufficientBalanceDialog(double requiredAmount) {
     showDialog(
       context: context,
-      barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.green),
-            SizedBox(width: 8),
-            Text('Booking Successful!'),
-          ],
-        ),
+        title: const Text('Insufficient Coin Balance'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Your booking has been confirmed.'),
+            Text('You need ${requiredAmount.toStringAsFixed(2)} coins to book this trip.'),
+            const SizedBox(height: 8),
+            Text('Current balance: ${_coinBalance.toStringAsFixed(2)} coins'),
             const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.blue.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Booking ID: #${booking['id']}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  Text('Seats: $_selectedSeats'),
-                  Text('Total: ${(widget.trip['pricePerSeat'] * _selectedSeats).toInt()} TND'),
-                  Text('Status: ${booking['status']}'),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'The driver will be notified and can confirm your booking.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
+            const Text('Would you like to purchase more coins?'),
           ],
         ),
         actions: [
           TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
             onPressed: () {
-              Navigator.of(context).pop(); // Close dialog
-              Navigator.of(context).pop(); // Go back to trip details
-              Navigator.of(context).pop(); // Go back to search results
+              Navigator.of(context).pop();
+              Navigator.pushNamed(context, '/coin-purchase');
             },
-            child: const Text('OK'),
+            child: const Text('Buy Coins'),
           ),
         ],
       ),
     );
   }
 
+
   void _showErrorSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: Colors.red),
+    );
+  }
+
+  void _showBeautifulBookingSuccessDialog(Map<String, dynamic> booking) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF4CAF50), Color(0xFF2E7D32)],
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_circle, size: 48, color: Colors.white),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'Booking Successful! 🎉',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Your booking has been confirmed!',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.white70,
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  children: [
+                    _buildBookingInfoRow('Trip', '${widget.trip['departureCity']} → ${widget.trip['arrivalCity']}'),
+                    const SizedBox(height: 8),
+                    _buildBookingInfoRow('Seats', '$_selectedSeats'),
+                    const SizedBox(height: 8),
+                    _buildBookingInfoRow('Total', '${(widget.trip['pricePerSeat'] * _selectedSeats).toInt()} coins'),
+                    const SizedBox(height: 8),
+                    _buildBookingInfoRow('Status', '${booking['status']}'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Text(
+                'The driver will be notified and can confirm your booking.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.white70,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.of(context).pop(); // Close dialog
+                    Navigator.of(context).pop(booking); // Return to previous screen with booking data
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF2E7D32),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text('Got it!', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBookingInfoRow(String label, String value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white70,
+            fontSize: 14,
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
     );
   }
 
@@ -172,9 +343,24 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Trip Summary',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Trip Summary',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        if (_isCheckingBalance)
+                          const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          CoinBalanceWidget(
+                            textStyle: const TextStyle(fontSize: 12),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -205,7 +391,7 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Text(
-                              '${price.toInt()} TND',
+                              '${price.toInt()} coins',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.bold,
@@ -264,6 +450,37 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
 
                     const SizedBox(height: 16),
 
+                    // Pickup point selection for individual pickup trips
+                    if (trip['pickupMode'] == 'INDIVIDUAL_PICKUP') ...[
+                      const Text(
+                        'Pickup Point',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ListTile(
+                          leading: const Icon(Icons.location_on, color: Colors.blue),
+                          title: Text(
+                            _selectedPickupPoint?['address'] ?? 'Select your pickup point',
+                            style: TextStyle(
+                              color: _selectedPickupPoint != null ? Colors.black : Colors.grey,
+                            ),
+                          ),
+                          subtitle: _selectedPickupPoint != null 
+                            ? Text('Lat: ${_selectedPickupPoint!['latitude']?.toStringAsFixed(4)}, Lng: ${_selectedPickupPoint!['longitude']?.toStringAsFixed(4)}')
+                            : const Text('Tap to select your pickup location'),
+                          trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+                          onTap: _selectPickupPoint,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
                     // Notes
                     TextField(
                       controller: _notesController,
@@ -292,8 +509,8 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('$_selectedSeats seat${_selectedSeats > 1 ? 's' : ''} × ${price.toInt()} TND'),
-                              Text('${(price * _selectedSeats).toInt()} TND'),
+                              Text('$_selectedSeats seat${_selectedSeats > 1 ? 's' : ''} × ${price.toInt()} coins'),
+                              Text('${(price * _selectedSeats).toInt()} coins'),
                             ],
                           ),
                           const Divider(),
@@ -305,7 +522,7 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
                                 style: TextStyle(fontWeight: FontWeight.bold),
                               ),
                               Text(
-                                '${totalPrice.toInt()} TND',
+                                '${totalPrice.toInt()} coins',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.bold,
                                   fontSize: 16,
@@ -340,7 +557,7 @@ class _TripBookingScreenState extends State<TripBookingScreen> {
                 child: _isLoading
                     ? const CircularProgressIndicator(color: Colors.white)
                     : Text(
-                        'Book Trip - ${totalPrice.toInt()} TND',
+                        'Book Trip - ${totalPrice.toInt()} coins',
                         style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                       ),
               ),

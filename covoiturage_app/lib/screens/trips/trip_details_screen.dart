@@ -77,7 +77,7 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
                           Text(
-                            '${price.toInt()} TND',
+                            '${price.toInt()} coins',
                             style: const TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.bold,
@@ -116,6 +116,9 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
             // Driver information
             if (driver != null) _buildDriverSection(driver),
+
+            // Pickup mode information
+            _buildPickupModeSection(trip),
 
             // Trip options
             if (options.isNotEmpty) _buildOptionsSection(options),
@@ -446,5 +449,111 @@ class _TripDetailsScreenState extends State<TripDetailsScreen> {
 
   String _formatDateTime(DateTime dateTime) {
     return '${dateTime.day}/${dateTime.month} ${dateTime.hour.toString().padLeft(2, '0')}:${dateTime.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildPickupModeSection(Map<String, dynamic> trip) {
+    final pickupMode = trip['pickupMode'] as String?;
+    final pickupPoints = trip['pickupPoints'] as List<dynamic>? ?? [];
+    
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  pickupMode == 'DESIGNATED_POINT' ? Icons.location_on : Icons.my_location,
+                  color: pickupMode == 'DESIGNATED_POINT' ? Colors.blue : Colors.green,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Pickup Information',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            if (pickupMode == 'DESIGNATED_POINT' && pickupPoints.isNotEmpty) ...[
+              Text(
+                'This trip has designated pickup points:',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Colors.grey.shade700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              ...pickupPoints.map((point) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.place,
+                        size: 16,
+                        color: Colors.blue.shade600,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          point['address'] ?? 'Pickup point',
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ] else if (pickupMode == 'INDIVIDUAL_PICKUP') ...[
+              Row(
+                children: [
+                  Icon(
+                    Icons.my_location,
+                    size: 16,
+                    color: Colors.green.shade600,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Individual pickup - passengers will share their location with the driver',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Icon(
+                    Icons.help_outline,
+                    size: 16,
+                    color: Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Pickup details will be provided by the driver',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }

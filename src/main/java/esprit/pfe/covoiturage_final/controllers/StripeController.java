@@ -6,15 +6,14 @@ import com.stripe.model.checkout.Session;
 import com.stripe.model.Event;
 import com.stripe.net.Webhook;
 import com.stripe.param.checkout.SessionCreateParams;
-import esprit.pfe.covoiturage_final.entities.Paiement;
-import esprit.pfe.covoiturage_final.entities.Reservation;
-import esprit.pfe.covoiturage_final.repositories.ReservationRepository;
-import esprit.pfe.covoiturage_final.services.PaymentService;
+import esprit.pfe.covoiturage_final.entities.CoinTransaction;
+import esprit.pfe.covoiturage_final.services.CoinService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
@@ -47,66 +46,50 @@ public class StripeController {
     @Value("${stripe.cancel-url}")
     private String cancelUrl;
 
-    private final ReservationRepository reservationRepository;
-    private final PaymentService paymentService;
+    private final CoinService coinService;
 
-    public StripeController(ReservationRepository reservationRepository, PaymentService paymentService) {
-        this.reservationRepository = reservationRepository;
-        this.paymentService = paymentService;
+    public StripeController(CoinService coinService) {
+        this.coinService = coinService;
     }
 
-    @PostMapping("/checkout-session/{reservationId}")
-    public ResponseEntity<?> createCheckoutSession(@PathVariable Long reservationId) {
+    @PostMapping("/checkout-session/coins")
+    public ResponseEntity<?> createCoinPurchaseSession(
+            @RequestParam Long userId,
+            @RequestParam Double coinAmount,
+            Authentication authentication) {
         try {
             if (stripeSecretKey == null || stripeSecretKey.isBlank()) {
-                log.error("Stripe checkout session failed: secret key not configured for reservation {}", reservationId);
+                log.error("Stripe checkout session failed: secret key not configured for coin purchase");
                 return ResponseEntity.status(HttpStatus.PRECONDITION_REQUIRED)
                         .body("Stripe secret key not configured");
             }
             Stripe.apiKey = stripeSecretKey;
-            log.info("Creating Stripe checkout session for reservation {}", reservationId);
+            log.info("Creating Stripe checkout session for coin purchase: userId={}, amount={}", userId, coinAmount);
 
-            Reservation reservation = reservationRepository.findById(reservationId)
-                    .orElseThrow(() -> new RuntimeException("Reservation not found"));
-
-            // Require confirmed reservation for Stripe checkout
-            if (reservation.getStatus() != Reservation.ReservationStatus.CONFIRMED) {
-                return ResponseEntity.badRequest().body("Reservation must be CONFIRMED");
+            if (!coinService.validateCoinAmount(coinAmount)) {
+                return ResponseEntity.badRequest().body("Invalid coin amount");
             }
 
-            double amountTnd = reservation.getTotalPrice() == null ? 0.0 : reservation.getTotalPrice();
-            if (amountTnd <= 0) {
-                return ResponseEntity.badRequest().body("Invalid reservation amount");
-            }
-
-            // Create or reuse a pending local payment
-            Paiement localPayment;
-            try {
-                localPayment = paymentService.createPayment(reservationId, Paiement.PaymentMethod.CREDIT_CARD, amountTnd);
-            } catch (RuntimeException ex) {
-                Paiement existing = paymentService.getPaymentByReservationId(reservationId);
-                if (existing == null) throw ex;
-                localPayment = existing;
-            }
-
-            long amountEurCents = toEurCents(amountTnd);
+            long amountEurCents = toEurCents(coinAmount);
 
             SessionCreateParams params = SessionCreateParams.builder()
                     .setMode(SessionCreateParams.Mode.PAYMENT)
-                    .setSuccessUrl(successUrl)
-                    .setCancelUrl(cancelUrl)
+                    .setSuccessUrl(successUrl + "?type=coins&userId=" + userId)
+                    .setCancelUrl(cancelUrl + "?type=coins&userId=" + userId)
                     .addLineItem(SessionCreateParams.LineItem.builder()
                             .setQuantity(1L)
                             .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
                                     .setCurrency(stripeCurrency.toLowerCase())
                                     .setUnitAmount(amountEurCents)
                                     .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                            .setName("Reservation #" + reservation.getId())
+                                            .setName("Coins Purchase - " + coinAmount + " coins")
+                                            .setDescription("Purchase " + coinAmount + " coins for carpooling")
                                             .build())
                                     .build())
                             .build())
-                    .putMetadata("paymentId", String.valueOf(localPayment.getId()))
-                    .putMetadata("reservationId", String.valueOf(reservationId))
+                    .putMetadata("userId", String.valueOf(userId))
+                    .putMetadata("coinAmount", String.valueOf(coinAmount))
+                    .putMetadata("type", "coin_purchase")
                     .build();
 
             Session session = Session.create(params);
@@ -114,10 +97,11 @@ public class StripeController {
             Map<String, Object> resp = new HashMap<>();
             resp.put("url", session.getUrl());
             resp.put("sessionId", session.getId());
-            log.info("Stripe checkout session created successfully for reservation {}: sessionId={}", reservationId, session.getId());
+            resp.put("coinAmount", coinAmount);
+            log.info("Stripe checkout session created successfully for coin purchase: userId={}, sessionId={}", userId, session.getId());
             return ResponseEntity.ok(resp);
         } catch (Exception e) {
-            log.error("Failed to create Stripe checkout session for reservation {}: {}", reservationId, e.getMessage(), e);
+            log.error("Failed to create Stripe checkout session for coin purchase: userId={}, error={}", userId, e.getMessage(), e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(e.getMessage());
         }
     }
@@ -142,16 +126,24 @@ public class StripeController {
         if ("checkout.session.completed".equals(event.getType())) {
             Session session = (Session) event.getDataObjectDeserializer().getObject().orElse(null);
             if (session != null) {
-                String paymentIdStr = session.getMetadata() != null ? session.getMetadata().get("paymentId") : null;
-                String reservationIdStr = session.getMetadata() != null ? session.getMetadata().get("reservationId") : null;
-                if (paymentIdStr != null) {
-                    try {
-                        Long paymentId = Long.parseLong(paymentIdStr);
-                        String transactionId = session.getPaymentIntent();
-                        paymentService.processPayment(paymentId, transactionId, "Stripe Checkout completed");
-                        log.info("Payment {} processed successfully via webhook for reservation {}", paymentId, reservationIdStr);
-                    } catch (Exception e) {
-                        log.error("Failed to process payment from webhook: paymentId={}, error={}", paymentIdStr, e.getMessage(), e);
+                String type = session.getMetadata() != null ? session.getMetadata().get("type") : null;
+                
+                if ("coin_purchase".equals(type)) {
+                    // Handle coin purchase
+                    String userIdStr = session.getMetadata() != null ? session.getMetadata().get("userId") : null;
+                    String coinAmountStr = session.getMetadata() != null ? session.getMetadata().get("coinAmount") : null;
+                    
+                    if (userIdStr != null && coinAmountStr != null) {
+                        try {
+                            Long userId = Long.parseLong(userIdStr);
+                            Double coinAmount = Double.parseDouble(coinAmountStr);
+                            String stripePaymentId = session.getPaymentIntent();
+                            
+                            coinService.purchaseCoins(userId, coinAmount, stripePaymentId);
+                            log.info("Coins purchased successfully via webhook: userId={}, amount={}, stripePaymentId={}", userId, coinAmount, stripePaymentId);
+                        } catch (Exception e) {
+                            log.error("Failed to process coin purchase from webhook: userId={}, amount={}, error={}", userIdStr, coinAmountStr, e.getMessage(), e);
+                        }
                     }
                 }
             }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../widgets/company_logo.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -27,31 +28,26 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Company Logo with white text for splash screen
             Container(
-              padding: const EdgeInsets.all(28),
+              padding: const EdgeInsets.all(32),
               decoration: BoxDecoration(
                 color: colorScheme.onPrimary.withOpacity(0.1),
-                shape: BoxShape.circle,
+                borderRadius: BorderRadius.circular(24),
               ),
-              child: Icon(
-                Icons.directions_car_filled,
-                size: 72,
-                color: colorScheme.onPrimary,
+              child: CompanyLogo(
+                size: 220,
+                showTagline: true,
+                tagline: 'Your Journey, Connected',
+                lightVariant: true,
               ),
             ),
-            const SizedBox(height: 20),
-            Text(
-              'RideShare',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    color: colorScheme.onPrimary,
-                    fontWeight: FontWeight.bold,
-                  ),
-            ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 24),
             Text(
               'Share rides. Save money. Meet people.',
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colorScheme.onPrimary.withOpacity(0.9),
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    color: colorScheme.onPrimary.withOpacity(0.95),
+                    fontWeight: FontWeight.w500,
                   ),
               textAlign: TextAlign.center,
             ),
@@ -70,6 +66,37 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

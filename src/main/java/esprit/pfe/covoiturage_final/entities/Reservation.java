@@ -39,6 +39,16 @@ public class Reservation {
     @Column(name = "notes")
     private String notes;
     
+    // Passenger pickup point for individual pickup trips
+    @Column(name = "passenger_pickup_address")
+    private String passengerPickupAddress;
+    
+    @Column(name = "passenger_pickup_latitude")
+    private Double passengerPickupLatitude;
+    
+    @Column(name = "passenger_pickup_longitude")
+    private Double passengerPickupLongitude;
+    
     // Relationships
     @Column(name = "voyage_id", nullable = false)
     private Long voyageId;

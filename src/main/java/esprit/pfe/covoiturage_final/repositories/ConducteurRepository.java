@@ -12,4 +12,6 @@ public interface ConducteurRepository extends JpaRepository<Conducteur, Long> {
     List<Conducteur> findByIsAvailable(Boolean isAvailable);
     List<Conducteur> findByRatingGreaterThan(Double rating);
     List<Conducteur> findByVehicleModel(String vehicleModel);
+    List<Conducteur> findByLicenseImagePathIsNotNullAndLicenseVerifiedFalse();
+    List<Conducteur> findByLicenseVerifiedTrue();
 }

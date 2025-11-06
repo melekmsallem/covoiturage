@@ -21,4 +21,9 @@ public class BookingRequest {
     
     @Size(max = 500, message = "Notes cannot exceed 500 characters")
     private String notes;
+    
+    // Pickup point for individual pickup trips
+    private String pickupAddress;
+    private Double pickupLatitude;
+    private Double pickupLongitude;
 }

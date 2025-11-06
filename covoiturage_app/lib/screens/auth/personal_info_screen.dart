@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/auth_service.dart';
-import 'vehicle_info_screen.dart';
-import 'payment_info_screen.dart';
+import 'license_scanning_screen.dart';
+import '../home/home_screen.dart';
 
 class PersonalInfoScreen extends StatefulWidget {
   final String role;
@@ -51,14 +52,17 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
     });
 
     try {
-      // Temporarily disable username check for testing
-      // TODO: Fix backend API endpoint
-      await Future.delayed(const Duration(milliseconds: 500)); // Simulate API call
+      // Check username availability via real API
+      final response = await _authService.checkUsernameAvailability(_usernameController.text.trim());
       
       if (mounted) {
         setState(() {
           _isCheckingUsername = false;
-          _usernameError = null; // Always allow for now
+          if (response) {
+            _usernameError = null; // Username is available
+          } else {
+            _usernameError = 'Username is already taken';
+          }
         });
       }
       
@@ -84,30 +88,79 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
     if (!_formKey.currentState!.validate()) return;
     if (_usernameError != null) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => widget.role == 'CONDUCTEUR' 
-          ? VehicleInfoScreen(
-              role: widget.role,
-              phoneNumber: widget.phoneNumber,
-              username: _usernameController.text.trim(),
-              email: _emailController.text.trim(),
-              password: _passwordController.text,
-              firstName: _firstNameController.text.trim(),
-              lastName: _lastNameController.text.trim(),
-            )
-          : PaymentInfoScreen(
-              role: widget.role,
-              phoneNumber: widget.phoneNumber,
-              username: _usernameController.text.trim(),
-              email: _emailController.text.trim(),
-              password: _passwordController.text,
-              firstName: _firstNameController.text.trim(),
-              lastName: _lastNameController.text.trim(),
-            ),
+    if (widget.role == 'CONDUCTEUR') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LicenseScanningScreen(
+            role: widget.role,
+            phoneNumber: widget.phoneNumber,
+            username: _usernameController.text.trim(),
+            email: _emailController.text.trim(),
+            password: _passwordController.text,
+            firstName: _firstNameController.text.trim(),
+            lastName: _lastNameController.text.trim(),
+          ),
+        ),
+      );
+    } else {
+      _createAccountDirectly();
+    }
+  }
+
+  Future<void> _createAccountDirectly() async {
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
       ),
     );
+
+    try {
+      final authService = AuthService();
+      final response = await authService.signUp(
+        username: _usernameController.text.trim(),
+        email: _emailController.text.trim(),
+        password: _passwordController.text,
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        phoneNumber: widget.phoneNumber,
+        role: widget.role,
+      );
+
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        
+        final authProvider = context.read<AuthProvider>();
+        // Clear any existing authentication before setting new one
+        print('DEBUG: Logging out current user before signup');
+        await authProvider.logout();
+        print('DEBUG: Logging in new user with ID: ${response['id']}');
+        await authProvider.login(response['token'], response);
+        print('DEBUG: New user logged in successfully');
+        
+        // Account created successfully
+
+        // Navigate to home screen
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const HomeScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Signup failed: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -120,6 +173,10 @@ class _PersonalInfoScreenState extends State<PersonalInfoScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: colorScheme.onPrimary,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
       ),
       body: Container(
         decoration: BoxDecoration(

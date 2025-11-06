@@ -23,6 +23,7 @@ public interface TripService {
     // Trip Status Management
     TripResponse startTrip(Long tripId, Long driverId);
     TripResponse completeTrip(Long tripId, Long driverId);
+    TripStartReminderResponse getTripStartDetails(Long tripId, Long driverId);
     
     // Booking Management
     BookingResponse createBooking(BookingRequest request, Long passengerId);
@@ -35,6 +36,10 @@ public interface TripService {
     BookingResponse confirmBooking(Long bookingId, Long driverId);
     BookingResponse declineBooking(Long bookingId, Long driverId);
     BookingResponse cancelBooking(Long bookingId, Long userId);
+    
+    // Pickup Point Management
+    BookingResponse setPassengerPickupPoint(Long bookingId, Long passengerId, String address, Double latitude, Double longitude);
+    List<Map<String, Object>> getTripPickupPoints(Long tripId, Long userId);
     
     // Trip Statistics
     List<TripResponse> getAvailableTrips();

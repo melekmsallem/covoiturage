@@ -45,6 +45,10 @@ public class Voyage {
     @Column(name = "status", nullable = false)
     private VoyageStatus status = VoyageStatus.PLANNED;
     
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pickup_mode")
+    private PickupMode pickupMode = PickupMode.DESIGNATED_POINT; // default
+    
     @Column(name = "created_at")
     private LocalDateTime createdAt;
     
@@ -99,5 +103,10 @@ public class Voyage {
     
     public enum VoyageStatus {
         PLANNED, ACTIVE, COMPLETED, CANCELLED
+    }
+    
+    public enum PickupMode {
+        DESIGNATED_POINT,    // Driver sets specific pickup locations
+        INDIVIDUAL_PICKUP    // Driver picks up each passenger individually
     }
 }
