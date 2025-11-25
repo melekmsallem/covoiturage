@@ -50,6 +50,7 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testImplementation 'org.springframework.security:spring-security-test'
+    testRuntimeOnly 'com.h2database:h2'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
@@ -87,5 +88,8 @@ sonarqube {
     properties {
         property 'sonar.projectKey', 'covoiturage_final_backend'
         property 'sonar.projectName', 'Covoiturage Final – Backend'
+        property 'sonar.organization', System.getenv('SONAR_ORG') ?: System.getenv('SONAR_ORGANIZATION') ?: 'msall'
+        property 'sonar.host.url', System.getenv('SONAR_HOST_URL') ?: 'http://localhost:9000'
+        property 'sonar.scm.provider', 'git'
     }
 }

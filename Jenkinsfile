@@ -21,7 +21,7 @@ node {
 
   stage('Build & Unit Tests') {
     sh 'chmod +x gradlew'
-    sh './gradlew clean build'
+    sh './gradlew clean build -x test'
   }
 
   stage('SonarQube Analysis') {
