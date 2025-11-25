@@ -1,12 +1,16 @@
 properties([
   pipelineTriggers([
-    cron('H 3 * * *') // Daily run at a randomized minute around 03:00
+    cron('H 3 * * *'),          // Daily schedule
+    githubPush()                // Fire on GitHub webhook events
   ])
 ])
 
 node {
+  stage('Prepare Workspace') {
+    deleteDir()
+  }
   def dockerRepository = env.DOCKER_REPOSITORY ?: 'yourdockerhubuser/covoiturage-final'
-  def nexusRepoUrl = env.NEXUS_REPOSITORY_URL ?: 'http://nexus:8081/repository/maven-releases/'
+  def nexusRepoUrl = env.NEXUS_REPOSITORY_URL ?: 'http://localhost:8083/repository/maven-releases/'
   def buildTag = env.BUILD_NUMBER ?: (env.BUILD_ID ?: 'local')
   def versionedImage = "${dockerRepository}:${buildTag}"
   def latestImage = "${dockerRepository}:latest"
@@ -63,6 +67,7 @@ node {
 
   stage('Deploy with Docker Compose') {
     sh """
+      docker network create cicd-net || true
       APP_IMAGE=${versionedImage} docker compose -f infra/docker-compose.app.yml down || true
       APP_IMAGE=${versionedImage} docker compose -f infra/docker-compose.app.yml up -d
     """
