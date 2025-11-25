@@ -8,7 +8,6 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -19,20 +18,23 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
 public class AuthTokenFilter extends OncePerRequestFilter {
-    @Autowired
-    private JwtUtils jwtUtils;
+    private final JwtUtils jwtUtils;
 
-    @Autowired
-    private UserDetailsServiceImpl userDetailsService;
+    private final UserDetailsServiceImpl userDetailsService;
 
-    private static final Logger logger = LoggerFactory.getLogger(AuthTokenFilter.class);
+    public AuthTokenFilter(JwtUtils jwtUtils, UserDetailsServiceImpl userDetailsService) {
+        this.jwtUtils = jwtUtils;
+        this.userDetailsService = userDetailsService;
+    }
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(AuthTokenFilter.class);
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
         try {
             String jwt = parseJwt(request);
-            logger.debug("Request URI: {}, JWT extracted: {}", request.getRequestURI(), jwt != null);
+            LOGGER.debug("Request URI: {}, JWT extracted: {}", request.getRequestURI(), jwt != null);
             
             if (jwt != null && jwtUtils.validateJwtToken(jwt)) {
                 String usernameOrEmail = jwtUtils.getUserNameFromJwtToken(jwt);
@@ -40,25 +42,25 @@ public class AuthTokenFilter extends OncePerRequestFilter {
                     usernameOrEmail = usernameOrEmail.trim();
                 }
 
-                logger.debug("JWT token extracted username: {}", usernameOrEmail);
+                LOGGER.debug("JWT token extracted username: {}", usernameOrEmail);
 
                 try {
                     UserDetails userDetails = userDetailsService.loadUserByUsername(usernameOrEmail);
-                    logger.debug("UserDetails loaded for username: {}, user ID: {}", usernameOrEmail, ((User) userDetails).getId());
+                    LOGGER.debug("UserDetails loaded for username: {}, user ID: {}", usernameOrEmail, ((User) userDetails).getId());
                     UsernamePasswordAuthenticationToken authentication =
                             new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                     authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                     SecurityContextHolder.getContext().setAuthentication(authentication);
-                    logger.debug("Authentication set successfully for user: {}", usernameOrEmail);
+                    LOGGER.debug("Authentication set successfully for user: {}", usernameOrEmail);
                 } catch (Exception e) {
-                    logger.error("Cannot set user authentication for subject: {}", usernameOrEmail, e);
+                    LOGGER.error("Cannot set user authentication for subject: {}", usernameOrEmail, e);
                 }
             } else {
-                logger.warn("JWT validation failed or no JWT found for URI: {}", request.getRequestURI());
+                LOGGER.warn("JWT validation failed or no JWT found for URI: {}", request.getRequestURI());
             }
         } catch (Exception e) {
-            logger.error("Cannot set user authentication: {}", e);
+            LOGGER.error("Cannot set user authentication: {}", e);
         }
 
         filterChain.doFilter(request, response);
