@@ -1,11 +1,27 @@
+properties([
+  pipelineTriggers([
+    cron('H 3 * * *') // Daily run at a randomized minute around 03:00
+  ])
+])
+
 node {
+  def dockerRepository = env.DOCKER_REPOSITORY ?: 'yourdockerhubuser/covoiturage-final'
+  def nexusRepoUrl = env.NEXUS_REPOSITORY_URL ?: 'http://nexus:8081/repository/maven-releases/'
+  def buildTag = env.BUILD_NUMBER ?: (env.BUILD_ID ?: 'local')
+  def versionedImage = "${dockerRepository}:${buildTag}"
+  def latestImage = "${dockerRepository}:latest"
+
   stage('SCM') {
     checkout scm
   }
 
+  stage('Build & Unit Tests') {
+    sh 'chmod +x gradlew'
+    sh './gradlew clean build'
+  }
+
   stage('SonarQube Analysis') {
-    withSonarQubeEnv() {
-      sh 'chmod +x gradlew'
+    withSonarQubeEnv('sonar-local') {
       sh "./gradlew sonar"
     }
   }
@@ -17,5 +33,42 @@ node {
         error "Pipeline aborted due to quality gate failure: ${qg.status}"
       }
     }
+  }
+
+  stage('Publish Artifact to Nexus') {
+    withCredentials([usernamePassword(credentialsId: 'nexus-admin', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+      sh """
+        ./gradlew publish \\
+          -PnexusUsername=${NEXUS_USER} \\
+          -PnexusPassword=${NEXUS_PASS} \\
+          -PnexusRepositoryUrl=${nexusRepoUrl}
+      """
+    }
+  }
+
+  stage('Docker Build') {
+    sh "docker build -t ${versionedImage} --build-arg JAR_FILE=build/libs/covoiturage-final.jar ."
+  }
+
+  stage('Docker Push') {
+    withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
+      sh """
+        echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
+        docker tag ${versionedImage} ${latestImage}
+        docker push ${versionedImage}
+        docker push ${latestImage}
+      """
+    }
+  }
+
+  stage('Deploy with Docker Compose') {
+    sh """
+      APP_IMAGE=${versionedImage} docker compose -f infra/docker-compose.app.yml down || true
+      APP_IMAGE=${versionedImage} docker compose -f infra/docker-compose.app.yml up -d
+    """
+  }
+
+  stage('Cleanup') {
+    sh 'docker image prune -f || true'
   }
 }

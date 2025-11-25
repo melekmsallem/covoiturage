@@ -1,13 +1,13 @@
 package esprit.pfe.covoiturage_final.config;
 
 import esprit.pfe.covoiturage_final.security.AuthTokenFilter;
+import esprit.pfe.covoiturage_final.security.UserAuthenticationProvider;
 import esprit.pfe.covoiturage_final.services.UserDetailsServiceImpl;
-import org.springframework.beans.factory.annotation.Autowired;
+import esprit.pfe.covoiturage_final.security.JwtUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.boot.autoconfigure.security.servlet.PathRequest;
-import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -17,33 +17,30 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
+import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-import org.springframework.core.annotation.Order;
 
 import java.util.Arrays;
+import java.util.stream.Stream;
 
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
-    @Autowired
-    UserDetailsServiceImpl userDetailsService;
-
     @Bean
-    public AuthTokenFilter authenticationJwtTokenFilter() {
-        return new AuthTokenFilter();
+    public AuthTokenFilter authenticationJwtTokenFilter(JwtUtils jwtUtils,
+                                                        UserDetailsServiceImpl userDetailsService) {
+        return new AuthTokenFilter(jwtUtils, userDetailsService);
     }
 
     @Bean
-    public DaoAuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
-
-        authProvider.setUserDetailsService(userDetailsService);
-        authProvider.setPasswordEncoder(passwordEncoder());
-
-        return authProvider;
+    public AuthenticationProvider authenticationProvider(UserDetailsServiceImpl userDetailsService,
+                                                         PasswordEncoder passwordEncoder) {
+        return new UserAuthenticationProvider(userDetailsService, passwordEncoder);
     }
 
     @Bean
@@ -56,9 +53,20 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    private static final String[] CSRF_IGNORED_PATTERNS = {
+            "/api/**",
+            "/ws/**",
+            "/notifications/**",
+            "/h2-console/**"
+    };
+
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http.csrf(csrf -> csrf.disable())
+    public SecurityFilterChain filterChain(HttpSecurity http,
+                                           AuthenticationProvider authenticationProvider,
+                                           AuthTokenFilter authTokenFilter) throws Exception {
+        http.csrf(csrf -> csrf
+                    .ignoringRequestMatchers(csrfIgnoreMatchers())
+                    .csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse()))
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth ->
@@ -132,10 +140,16 @@ public class SecurityConfig {
                     .anyRequest().authenticated()
             );
 
-        http.authenticationProvider(authenticationProvider());
-        http.addFilterBefore(authenticationJwtTokenFilter(), UsernamePasswordAuthenticationFilter.class);
+        http.authenticationProvider(authenticationProvider);
+        http.addFilterBefore(authTokenFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    private RequestMatcher[] csrfIgnoreMatchers() {
+        return Stream.of(CSRF_IGNORED_PATTERNS)
+                .map(AntPathRequestMatcher::new)
+                .toArray(RequestMatcher[]::new);
     }
 
     @Bean

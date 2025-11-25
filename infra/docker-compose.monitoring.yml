@@ -1,0 +1,57 @@
+services:
+  sonar-exporter:
+    build:
+      context: ./sonar-exporter
+    container_name: sonar-exporter
+    restart: unless-stopped
+    environment:
+      SONARQUBE_SERVER: ${SONARQUBE_SERVER:-http://sonarqube:9000}
+      SONARQUBE_TOKEN: ${SONARQUBE_TOKEN:?Set SONARQUBE_TOKEN in an .env file}
+    ports:
+      - "8198:8198"
+    networks:
+      - cicd-net
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: node-exporter
+    restart: unless-stopped
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - '/:/host:ro'
+    ports:
+      - "9100:9100"
+    networks:
+      - cicd-net
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: cadvisor
+    restart: unless-stopped
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    ports:
+      - "8085:8080"
+    networks:
+      - cicd-net
+  nexus:
+    image: sonatype/nexus3:3.68.0
+    container_name: nexus
+    restart: unless-stopped
+    ports:
+      - "8083:8081"
+      - "8084:8084"
+    volumes:
+      - nexus-data:/nexus-data
+    networks:
+      - cicd-net
+
+networks:
+  cicd-net:
+    external: true
+
+volumes:
+  nexus-data:
+

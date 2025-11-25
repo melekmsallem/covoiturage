@@ -1,0 +1,40 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: covoiturage-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-covoiturage}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-covoiturage}
+      MYSQL_USER: ${MYSQL_USER:-covoiturage}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-covoiturage}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - cicd-net
+    restart: unless-stopped
+
+  backend:
+    image: ${APP_IMAGE:?Set APP_IMAGE to the pushed Spring Boot image}
+    container_name: covoiturage-backend
+    depends_on:
+      - mysql
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-covoiturage}?useSSL=false&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER:-covoiturage}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-covoiturage}
+    ports:
+      - "8081:8081"
+    networks:
+      - cicd-net
+    restart: unless-stopped
+
+networks:
+  cicd-net:
+    external: true
+
+volumes:
+  mysql-data:
+
