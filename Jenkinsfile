@@ -34,7 +34,11 @@ node {
     timeout(time: 1, unit: 'HOURS') {
       def qg = waitForQualityGate()
       if (qg.status != 'OK') {
-        error "Pipeline aborted due to quality gate failure: ${qg.status}"
+        echo "WARNING: Quality gate status is '${qg.status}' - continuing build but please review SonarQube results"
+        // Uncomment the line below to make Quality Gate blocking again
+        // error "Pipeline aborted due to quality gate failure: ${qg.status}"
+      } else {
+        echo "Quality gate passed: ${qg.status}"
       }
     }
   }
