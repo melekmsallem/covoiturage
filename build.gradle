@@ -106,12 +106,17 @@ sonarqube {
         
         // Sources à analyser
         property 'sonar.sources', 'src/main/java'
-        property 'sonar.tests', 'src/test/java'
         
         // Optimisations de performance
         property 'sonar.sourceEncoding', 'UTF-8'
         property 'sonar.java.binaries', 'build/classes'
-        property 'sonar.java.test.binaries', 'build/test-classes'
+        
+        // Tests - seulement si le répertoire existe (tests compilés)
+        def testClassesDir = file('build/test-classes')
+        if (testClassesDir.exists()) {
+            property 'sonar.tests', 'src/test/java'
+            property 'sonar.java.test.binaries', 'build/test-classes'
+        }
         
         // Cache pour accélérer les analyses suivantes
         property 'sonar.cache.enabled', 'true'
