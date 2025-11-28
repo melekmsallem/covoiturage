@@ -91,5 +91,29 @@ sonarqube {
         property 'sonar.organization', System.getenv('SONAR_ORG') ?: System.getenv('SONAR_ORGANIZATION') ?: 'msall'
         property 'sonar.host.url', System.getenv('SONAR_HOST_URL') ?: 'http://localhost:9000'
         property 'sonar.scm.provider', 'git'
+        
+        // Exclusions pour accélérer l'analyse
+        property 'sonar.exclusions', [
+            '**/generated/**',
+            '**/build/**',
+            '**/target/**',
+            '**/*.metadata',
+            '**/covoiturage_app/**',
+            '**/flutter_*.dart',
+            '**/docs/**',
+            '**/infra/**'
+        ].join(',')
+        
+        // Sources à analyser
+        property 'sonar.sources', 'src/main/java'
+        property 'sonar.tests', 'src/test/java'
+        
+        // Optimisations de performance
+        property 'sonar.sourceEncoding', 'UTF-8'
+        property 'sonar.java.binaries', 'build/classes'
+        property 'sonar.java.test.binaries', 'build/test-classes'
+        
+        // Cache pour accélérer les analyses suivantes
+        property 'sonar.cache.enabled', 'true'
     }
 }
